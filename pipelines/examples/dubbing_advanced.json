@@ -1,0 +1,14 @@
+{
+  "pipeline_type": "dubbing",
+  "payload": {
+    "source_language": "auto",
+    "target_language": "vi",
+    "translator_service": "google",
+    "tts_voice": "vi-VN-HoaiMyNeural",
+    "tts_rate": "-5%",
+    "tts_volume": "+3%",
+    "max_audio_stretch": 1.25,
+    "background_weight": 0.12,
+    "burn_subtitles": true
+  }
+}

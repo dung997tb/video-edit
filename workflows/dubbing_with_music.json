@@ -1,0 +1,12 @@
+{
+  "name": "dubbing-with-music",
+  "pipeline_type": "dubbing",
+  "payload": {
+    "source_language": "auto",
+    "target_language": "vi",
+    "translator_service": "google",
+    "tts_voice": "vi-VN-HoaiMyNeural",
+    "background_audio": "assets/background_music.mp3",
+    "background_weight": 0.15
+  }
+}

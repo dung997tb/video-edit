@@ -1,0 +1,16 @@
+__pycache__/
+*.pyc
+.env
+.pytest_cache/
+.agent/
+.vscode/
+.gh/
+logs/
+*.log
+debug.log
+output/
+temp/
+cache/
+test_runs/
+tmp*/
+tools/

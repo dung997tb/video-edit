@@ -1,0 +1,9 @@
+{
+  "name": "translate-only-template",
+  "pipeline_type": "dubbing",
+  "payload": {
+    "source_language": "auto",
+    "target_language": "vi",
+    "translator_service": "google"
+  }
+}

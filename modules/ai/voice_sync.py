@@ -1,0 +1,214 @@
+from __future__ import annotations
+
+import subprocess
+from dataclasses import dataclass
+
+from core.cache import stable_value_signature
+from core.models import StepResult
+from core.process import run_subprocess
+from modules.base import BaseModule
+from modules.registry import register
+
+
+MIN_SYNC_DURATION = 0.001
+
+
+@dataclass(slots=True)
+class VoiceSyncPlan:
+    path: str
+    start: float
+    source_duration: float
+    output_duration: float
+    speed: float = 1.0
+    trim_duration: float | None = None
+    dropped_source_duration: float = 0.0
+    mute: bool = False
+
+    @property
+    def end_time(self) -> float:
+        return self.start + self.output_duration
+
+
+def plan_voice_segments(
+    segments: list[dict],
+    *,
+    resolve_duration,
+    max_audio_stretch: float,
+    min_output_duration: float = MIN_SYNC_DURATION,
+) -> list[VoiceSyncPlan]:
+    ordered_segments = sorted(
+        segments,
+        key=lambda item: (float(item.get("start", 0.0)), int(item.get("index", 0))),
+    )
+    stretch_limit = max(1.0, float(max_audio_stretch))
+    plans: list[VoiceSyncPlan] = []
+    for index, segment in enumerate(ordered_segments):
+        start = max(float(segment.get("start", 0.0)), 0.0)
+        source_duration = float(resolve_duration(segment) or 0.0)
+        if source_duration <= 0:
+            source_duration = max(float(segment.get("end", start)) - start, min_output_duration)
+        next_start = None
+        if index + 1 < len(ordered_segments):
+            next_start = max(float(ordered_segments[index + 1].get("start", start)), start)
+
+        output_duration = source_duration
+        speed = 1.0
+        trim_duration = None
+        mute = False
+        if next_start is not None:
+            available_duration = max(next_start - start, 0.0)
+            if available_duration <= 0:
+                output_duration = min_output_duration
+                trim_duration = min_output_duration
+                dropped_source_duration = max(source_duration - min_output_duration, 0.0)
+                mute = True
+            elif source_duration > available_duration:
+                required_speed = source_duration / available_duration
+                if required_speed <= stretch_limit:
+                    speed = required_speed
+                else:
+                    # Overflow is too large for the strict slot: apply max allowed
+                    # speed before trim so we keep more spoken content than trim-only.
+                    speed = stretch_limit
+                trim_duration = available_duration
+                output_duration = available_duration
+                kept_source_duration = available_duration * speed
+                dropped_source_duration = max(source_duration - kept_source_duration, 0.0)
+            else:
+                dropped_source_duration = 0.0
+        else:
+            dropped_source_duration = 0.0
+
+        plans.append(
+            VoiceSyncPlan(
+                path=segment["path"],
+                start=start,
+                source_duration=source_duration,
+                output_duration=max(output_duration, min_output_duration),
+                speed=speed,
+                trim_duration=trim_duration,
+                dropped_source_duration=dropped_source_duration,
+                mute=mute,
+            )
+        )
+    return plans
+
+
+def build_voice_filter_complex(plans: list[VoiceSyncPlan]) -> str:
+    if not plans:
+        return "[0:a]anull[out]"
+    delayed_labels = []
+    lines = []
+    for index, plan in enumerate(plans, start=1):
+        label = f"s{index}"
+        start_ms = max(int(round(plan.start * 1000)), 0)
+        filters: list[str] = []
+        filters.extend(_build_atempo_filters(plan.speed))
+        if plan.trim_duration is not None:
+            filters.append(f"atrim=duration={plan.trim_duration:.3f}")
+        if plan.mute:
+            filters.append("volume=0")
+        filters.append("asetpts=PTS-STARTPTS")
+        filters.append(f"adelay={start_ms}|{start_ms}")
+        lines.append(f"[{index}:a]{','.join(filters)}[{label}]")
+        delayed_labels.append(f"[{label}]")
+    inputs = "[0:a]" + "".join(delayed_labels)
+    lines.append(f"{inputs}amix=inputs={len(delayed_labels) + 1}:duration=longest:normalize=0[out]")
+    return ";".join(lines)
+
+
+def _build_atempo_filters(speed: float) -> list[str]:
+    if abs(speed - 1.0) < 1e-6:
+        return []
+    filters: list[str] = []
+    remaining = speed
+    while remaining > 2.0 + 1e-6:
+        filters.append("atempo=2.0")
+        remaining /= 2.0
+    while remaining < 0.5 - 1e-6:
+        filters.append("atempo=0.5")
+        remaining /= 0.5
+    filters.append(f"atempo={remaining:.6f}".rstrip("0").rstrip("."))
+    return filters
+
+
+@register
+class VoiceSyncModule(BaseModule):
+    NAME = "synced_audio"
+
+    def cache_inputs(self, context) -> dict:
+        configured = self.params.get("max_audio_stretch", context.state.get("max_audio_stretch"))
+        if configured is None:
+            return {}
+        return {"max_audio_stretch": float(configured)}
+
+    def upstream_artifact_hashes(self, context) -> dict:
+        return {
+            "tts_segments": stable_value_signature({"tts_segments": context.tts_segments}),
+        }
+
+    def execute(self, context, services) -> StepResult:
+        if not context.tts_segments:
+            raise ValueError("tts_segments are required before voice sync")
+        output_path = context.file_manager.step_file("synced_audio")
+        plans = plan_voice_segments(
+            context.tts_segments,
+            resolve_duration=lambda segment: self._probe_duration(segment["path"], services.settings.ffprobe_path),
+            max_audio_stretch=float(self.params.get("max_audio_stretch", services.settings.max_audio_stretch)),
+        )
+        total_duration = max((plan.end_time for plan in plans), default=MIN_SYNC_DURATION)
+        command = [
+            services.settings.ffmpeg_path,
+            "-y",
+            "-f",
+            "lavfi",
+            "-i",
+            "anullsrc=r=24000:cl=mono",
+            "-t",
+            f"{total_duration:.3f}",
+        ]
+        for plan in plans:
+            command.extend(["-i", plan.path])
+        command.extend(
+            [
+                "-filter_complex",
+                build_voice_filter_complex(plans),
+                "-map",
+                "[out]",
+                str(output_path),
+            ]
+        )
+        run_subprocess(
+            command,
+            job_id=context.job_id,
+            job_manager=services.job_manager,
+            process_registry=services.process_registry,
+            cancel_check=lambda: services.job_manager.is_cancel_requested(context.job_id),
+            grace_seconds=services.settings.cancel_grace_seconds,
+        )
+        return StepResult(
+            context_patch={"synced_audio": str(output_path)},
+            artifacts={"synced_audio": str(output_path)},
+        )
+
+    def _probe_duration(self, audio_path: str, ffprobe_path: str) -> float:
+        result = subprocess.run(
+            [
+                ffprobe_path,
+                "-v",
+                "error",
+                "-show_entries",
+                "format=duration",
+                "-of",
+                "default=noprint_wrappers=1:nokey=1",
+                audio_path,
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+            shell=False,
+        )
+        try:
+            return float(result.stdout.strip())
+        except ValueError as exc:
+            raise RuntimeError(f"unable to parse ffprobe duration for {audio_path}") from exc

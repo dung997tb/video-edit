@@ -1,0 +1,10 @@
+{
+  "pipeline_type": "dubbing",
+  "payload": {
+    "source_language": "en",
+    "target_language": "vi",
+    "translator_service": "google",
+    "tts_voice": "vi-VN-HoaiMyNeural",
+    "tts_rate": "-5%"
+  }
+}
