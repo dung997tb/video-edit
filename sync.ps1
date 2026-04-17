@@ -148,10 +148,11 @@ try {
 
 if ($token) {
     $basic = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes("x-access-token:$token"))
-    Invoke-Checked -Executable $script:GitExe -Arguments @(
+    $authenticatedPushArgs = @(
         "-c",
         "http.https://github.com/.extraheader=AUTHORIZATION: basic $basic"
-    ) + $pushArgs | Out-Null
+    ) + $pushArgs
+    Invoke-Checked -Executable $script:GitExe -Arguments $authenticatedPushArgs | Out-Null
 } else {
     Invoke-Checked -Executable $script:GitExe -Arguments $pushArgs | Out-Null
 }
