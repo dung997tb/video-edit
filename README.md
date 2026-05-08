@@ -36,6 +36,33 @@ Hệ thống có sẵn các "dây chuyền" sản xuất video độc lập:
 
 ---
 
+## 💎 Tính Năng Chi Tiết Toàn Tập (Features)
+
+**🎬 Xử lý Video (Visual Operations):**
+- Thay đổi kích thước (Scale), Cắt (Crop), Lật (Flip), Xoay (Rotate).
+- Ghép nối video (Concat), Chèn lớp phủ (Overlay) hoặc Đóng Dấu Bản Quyền (Watermark).
+- Khử nhiễu hình ảnh (Denoise), Chỉnh màu (Color Grade).
+- Các bộ lọc chuyên nghiệp: Làm mờ (Blur), Làm nét (Sharpen), Trắng đen (Grayscale), Tối góc (Vignette).
+
+**🎵 Xử lý Âm Thanh (Audio Operations):**
+- Cắt/Ghép âm thanh (Trim), Điều chỉnh tốc độ (Speed), Thay đổi âm lượng (Volume).
+- Hiệu ứng âm thanh (Fade-in/Fade-out), Chuẩn hóa âm lượng tự động (Loudness Normalize).
+- Lồng nhạc nền (Background Music) tự động thu nhỏ tiếng nhạc khi có giọng nói (Audio Ducking).
+
+**🧠 Xử lý Nội Dung bằng AI:**
+- Bóc băng âm thanh (Transcribe) cực chuẩn xác bằng mô hình Whisper đa ngôn ngữ.
+- Tự động dịch thuật phụ đề (Translation) qua nhiều Backend khác nhau.
+- Tạo giọng đọc nhân tạo (TTS) đa dạng (Hỗ trợ Edge-TTS, OpenAI, Google Cloud).
+- **Voice Sync (Khớp giọng):** Tự động bóp méo/co giãn thời gian của giọng đọc AI để khớp chính xác với độ dài đoạn video gốc.
+
+**⚙️ Kiến Trúc Hệ Thống & Tự Động Hóa:**
+- Cơ chế **Fan-out:** 1 file đầu vào tự động chẻ thành 5-10 Jobs để dịch ra nhiều thứ tiếng song song.
+- **Resumable Cache:** Tự động lưu bộ nhớ đệm (Cache). Job lỗi chạy lại sẽ nhảy qua các bước đã làm, không tốn tiền gọi API hai lần.
+- Endpoint giám sát Realtime (SSE) để kết nối trực tiếp với Frontend/Mobile App.
+- API Rate Limiting & Auth Header an toàn cho môi trường Server công cộng.
+
+---
+
 ## 🧠 Các AI Backends Hỗ Trợ
 
 - **Text-to-Speech (TTS):** 
