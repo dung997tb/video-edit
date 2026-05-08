@@ -369,3 +369,48 @@ Các key có thể dùng trong `payload` của bất kỳ pipeline nào:
 | `ja-JP-NanamiNeural` | Tiếng Nhật | Nữ |
 | `ko-KR-SunHiNeural` | Tiếng Hàn | Nữ |
 | `zh-CN-XiaoxiaoNeural` | Tiếng Trung | Nữ |
+
+---
+
+### 🎞️ Mở Rộng: `low_level` Pipeline (Xử Lý Cấp Thấp)
+
+Đối với `pipeline_type: "low_level"`, bạn cần truyền vào một mảng `operations` (các phép tính/bộ lọc) bên trong `payload`. Các operation này sẽ được biên dịch trực tiếp ra lệnh FFmpeg và chạy tuần tự.
+
+**Ví dụ JSON payload:**
+```json
+{
+  "operations": [
+    { "name": "cut", "start": 0.0, "end": 8.0 },
+    { "name": "speed", "factor": 1.1 },
+    { "name": "flip", "mode": "horizontal" },
+    { "name": "visual_blur", "sigma": 2.0 },
+    { "name": "audio_volume", "volume": 0.5 }
+  ]
+}
+```
+
+**Danh sách các Operation được hỗ trợ:**
+
+**1. Thao tác Video / Visual:**
+- `cut` *(start, end)*
+- `speed` *(factor)*
+- `flip` *(mode: "horizontal" hoặc "vertical")*
+- `crop` *(w, h, x, y)*
+- `scale` *(w, h)*
+- `rotate` *(angle)*
+- `concat` *(video_paths: array)*
+- `overlay` *(image_path, x, y)*
+- `watermark` *(text, x, y)*
+- `denoise`
+- `color_grade` *(brightness, contrast, saturation)*
+- `visual_blur` *(sigma)*
+- `visual_sharpen`
+- `visual_grayscale`
+- `visual_vignette`
+
+**2. Thao tác Âm Thanh / Audio:**
+- `audio_trim` *(start, end)*
+- `audio_speed` *(factor)*
+- `audio_volume` *(volume)*
+- `audio_fade` *(type: "in" hoặc "out", duration)*
+- `audio_normalize`
