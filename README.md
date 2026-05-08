@@ -79,4 +79,4 @@ SUPABASE_KEY=<your-service-role-key>
 
 ---
 
-*Phát triển bởi đội ngũ Kỹ sư AI Video - Đạt chuẩn mức độ ổn định Production v2.0.*
+*Phát triển bởi Manhdungsakura - Đạt chuẩn mức độ ổn định Production v2.0.*
