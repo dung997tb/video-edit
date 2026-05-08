@@ -40,16 +40,31 @@ except ImportError:  # pragma: no cover - fallback for minimal local environment
 def configure_logger(logs_dir: Path, level: str = "INFO") -> None:
     logs_dir.mkdir(parents=True, exist_ok=True)
     logger.remove()
-    logger.add(sys.stdout, level=level, enqueue=True, backtrace=False, diagnose=False)
-    logger.add(
-        logs_dir / "app.log",
-        level=level,
-        rotation="10 MB",
-        retention="10 days",
-        enqueue=True,
-        backtrace=False,
-        diagnose=False,
-    )
+    try:
+        logger.add(sys.stdout, level=level, enqueue=True, backtrace=False, diagnose=False)
+        logger.add(
+            logs_dir / "app.log",
+            level=level,
+            rotation="10 MB",
+            retention="10 days",
+            enqueue=True,
+            backtrace=False,
+            diagnose=False,
+        )
+    except Exception:
+        # Some locked-down Windows environments disallow multiprocessing pipes
+        # used by loguru enqueue mode. Fallback to synchronous logging.
+        logger.remove()
+        logger.add(sys.stdout, level=level, enqueue=False, backtrace=False, diagnose=False)
+        logger.add(
+            logs_dir / "app.log",
+            level=level,
+            rotation="10 MB",
+            retention="10 days",
+            enqueue=False,
+            backtrace=False,
+            diagnose=False,
+        )
 
 
 __all__ = ["configure_logger", "logger"]

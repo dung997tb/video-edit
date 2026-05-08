@@ -5,8 +5,12 @@ import uuid
 from abc import ABC, abstractmethod
 from datetime import UTC, datetime, timedelta
 from typing import Any
+from urllib.error import URLError
+from urllib.request import Request, urlopen
 
-from core.models import JobRecord, JobStatus, utcnow
+from core.logger import logger
+from core.metrics import metrics
+from core.models import JobError, JobRecord, JobStatus, utcnow
 
 
 class JobRepository(ABC):
@@ -47,6 +51,7 @@ class JobRepository(ABC):
         self,
         job_id: str,
         *,
+        worker_id: str | None = None,
         step_index: int,
         total_steps: int,
         current_step: str,
@@ -55,7 +60,14 @@ class JobRepository(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def complete_job(self, job_id: str, output_path: str | None, metadata: dict[str, Any] | None = None) -> JobRecord | None:
+    def complete_job(
+        self,
+        job_id: str,
+        output_path: str | None,
+        metadata: dict[str, Any] | None = None,
+        *,
+        worker_id: str | None = None,
+    ) -> JobRecord | None:
         raise NotImplementedError
 
     @abstractmethod
@@ -65,7 +77,9 @@ class JobRepository(ABC):
         error: str,
         *,
         cancelled: bool = False,
+        error_detail: JobError | dict[str, Any] | None = None,
         metadata: dict[str, Any] | None = None,
+        worker_id: str | None = None,
     ) -> JobRecord | None:
         raise NotImplementedError
 
@@ -104,7 +118,11 @@ class InMemoryJobRepository(JobRepository):
         now = utcnow()
         claimed: list[JobRecord] = []
         with self._lock:
-            for record in self._records.values():
+            records = sorted(
+                self._records.values(),
+                key=lambda item: (-int(getattr(item, "priority", 0)), item.created_at),
+            )
+            for record in records:
                 if record.cancel_requested:
                     continue
                 expired = record.lease_expires_at and record.lease_expires_at <= now
@@ -166,6 +184,7 @@ class InMemoryJobRepository(JobRepository):
         self,
         job_id: str,
         *,
+        worker_id: str | None = None,
         step_index: int,
         total_steps: int,
         current_step: str,
@@ -175,6 +194,8 @@ class InMemoryJobRepository(JobRepository):
             record = self._records.get(job_id)
             if record is None:
                 return None
+            if worker_id is not None and record.worker_id != worker_id:
+                return None
             record.step_index = step_index
             record.total_steps = total_steps
             record.current_step = current_step
@@ -182,10 +203,19 @@ class InMemoryJobRepository(JobRepository):
             record.updated_at = utcnow()
             return self._clone(record)
 
-    def complete_job(self, job_id: str, output_path: str | None, metadata: dict[str, Any] | None = None) -> JobRecord | None:
+    def complete_job(
+        self,
+        job_id: str,
+        output_path: str | None,
+        metadata: dict[str, Any] | None = None,
+        *,
+        worker_id: str | None = None,
+    ) -> JobRecord | None:
         with self._lock:
             record = self._records.get(job_id)
             if record is None:
+                return None
+            if worker_id is not None and record.worker_id != worker_id:
                 return None
             record.status = JobStatus.DONE
             record.output_path = output_path
@@ -205,14 +235,19 @@ class InMemoryJobRepository(JobRepository):
         error: str,
         *,
         cancelled: bool = False,
+        error_detail: JobError | dict[str, Any] | None = None,
         metadata: dict[str, Any] | None = None,
+        worker_id: str | None = None,
     ) -> JobRecord | None:
         with self._lock:
             record = self._records.get(job_id)
             if record is None:
                 return None
+            if worker_id is not None and record.worker_id != worker_id:
+                return None
             record.status = JobStatus.CANCELLED if cancelled else JobStatus.FAILED
             record.error = error
+            record.error_detail = _normalize_error_detail(error_detail)
             record.finished_at = utcnow()
             record.lease_expires_at = None
             record.worker_id = None
@@ -304,9 +339,13 @@ class SupabaseJobRepository(JobRepository):
             response = self.client.rpc("request_cancel_job", {"p_job_id": job_id}).execute()
             if response.data:
                 return JobRecord.from_dict(response.data[0])
-        except Exception:
+        except Exception as exc:
             # Backward compatibility for databases that have not applied the new RPC yet.
-            pass
+            logger.warning(
+                "cancel RPC unavailable for job {}, falling back to direct update: {}",
+                job_id,
+                exc,
+            )
 
         record = self.get_job(job_id)
         if record is None:
@@ -357,12 +396,13 @@ class SupabaseJobRepository(JobRepository):
         self,
         job_id: str,
         *,
+        worker_id: str | None = None,
         step_index: int,
         total_steps: int,
         current_step: str,
         progress: int,
     ) -> JobRecord | None:
-        response = (
+        query = (
             self.client.table(self.table)
             .update(
                 {
@@ -374,13 +414,22 @@ class SupabaseJobRepository(JobRepository):
                 }
             )
             .eq("id", job_id)
-            .execute()
         )
+        if worker_id is not None:
+            query = query.eq("worker_id", worker_id)
+        response = query.execute()
         if not response.data:
             return None
         return JobRecord.from_dict(response.data[0])
 
-    def complete_job(self, job_id: str, output_path: str | None, metadata: dict[str, Any] | None = None) -> JobRecord | None:
+    def complete_job(
+        self,
+        job_id: str,
+        output_path: str | None,
+        metadata: dict[str, Any] | None = None,
+        *,
+        worker_id: str | None = None,
+    ) -> JobRecord | None:
         payload: dict[str, Any] = {
             "status": JobStatus.DONE.value,
             "output_path": output_path,
@@ -393,7 +442,10 @@ class SupabaseJobRepository(JobRepository):
         }
         if metadata:
             payload["metadata"] = metadata
-        response = self.client.table(self.table).update(payload).eq("id", job_id).execute()
+        query = self.client.table(self.table).update(payload).eq("id", job_id)
+        if worker_id is not None:
+            query = query.eq("worker_id", worker_id)
+        response = query.execute()
         if not response.data:
             return None
         return JobRecord.from_dict(response.data[0])
@@ -404,11 +456,14 @@ class SupabaseJobRepository(JobRepository):
         error: str,
         *,
         cancelled: bool = False,
+        error_detail: JobError | dict[str, Any] | None = None,
         metadata: dict[str, Any] | None = None,
+        worker_id: str | None = None,
     ) -> JobRecord | None:
         payload: dict[str, Any] = {
             "status": JobStatus.CANCELLED.value if cancelled else JobStatus.FAILED.value,
             "error": error,
+            "error_detail": _normalize_error_detail(error_detail).to_dict() if error_detail else None,
             "worker_id": None,
             "pid": None,
             "lease_expires_at": None,
@@ -417,7 +472,10 @@ class SupabaseJobRepository(JobRepository):
         }
         if metadata:
             payload["metadata"] = metadata
-        response = self.client.table(self.table).update(payload).eq("id", job_id).execute()
+        query = self.client.table(self.table).update(payload).eq("id", job_id)
+        if worker_id is not None:
+            query = query.eq("worker_id", worker_id)
+        response = query.execute()
         if not response.data:
             return None
         return JobRecord.from_dict(response.data[0])
@@ -430,6 +488,8 @@ class SupabaseJobRepository(JobRepository):
 class JobManager:
     def __init__(self, repository: JobRepository) -> None:
         self.repository = repository
+        self.webhooks_enabled = True
+        self.webhook_timeout_seconds = 10.0
 
     def create_job(
         self,
@@ -440,12 +500,15 @@ class JobManager:
         input_path: str | None = None,
         input_uri: str | None = None,
         metadata: dict[str, Any] | None = None,
+        priority: int | None = None,
     ) -> JobRecord:
+        payload = payload or {}
         record = JobRecord(
             id=str(uuid.uuid4()),
             pipeline_type=pipeline_type,
             source_sha256=source_sha256,
-            payload=payload or {},
+            priority=_resolve_priority(payload, priority),
+            payload=payload,
             input_path=input_path,
             input_uri=input_uri,
             metadata=metadata or {},
@@ -477,6 +540,7 @@ class JobManager:
         self,
         job_id: str,
         *,
+        worker_id: str | None = None,
         step_index: int,
         total_steps: int,
         current_step: str,
@@ -484,14 +548,24 @@ class JobManager:
     ) -> JobRecord | None:
         return self.repository.update_progress(
             job_id,
+            worker_id=worker_id,
             step_index=step_index,
             total_steps=total_steps,
             current_step=current_step,
             progress=progress,
         )
 
-    def complete_job(self, job_id: str, output_path: str | None, metadata: dict[str, Any] | None = None) -> JobRecord | None:
-        return self.repository.complete_job(job_id, output_path, metadata)
+    def complete_job(
+        self,
+        job_id: str,
+        output_path: str | None,
+        metadata: dict[str, Any] | None = None,
+        *,
+        worker_id: str | None = None,
+    ) -> JobRecord | None:
+        record = self.repository.complete_job(job_id, output_path, metadata, worker_id=worker_id)
+        self._notify_terminal(record, event="job.completed")
+        return record
 
     def fail_job(
         self,
@@ -499,9 +573,84 @@ class JobManager:
         error: str,
         *,
         cancelled: bool = False,
+        error_detail: JobError | dict[str, Any] | None = None,
         metadata: dict[str, Any] | None = None,
+        worker_id: str | None = None,
     ) -> JobRecord | None:
-        return self.repository.fail_job(job_id, error, cancelled=cancelled, metadata=metadata)
+        record = self.repository.fail_job(
+            job_id,
+            error,
+            cancelled=cancelled,
+            error_detail=error_detail,
+            metadata=metadata,
+            worker_id=worker_id,
+        )
+        self._notify_terminal(record, event="job.cancelled" if cancelled else "job.failed")
+        return record
 
     def release_stale_leases(self) -> int:
         return self.repository.release_stale_leases()
+
+    def _notify_terminal(self, record: JobRecord | None, *, event: str) -> None:
+        if record is None:
+            return
+        duration = None
+        if record.started_at and record.finished_at:
+            duration = max((record.finished_at - record.started_at).total_seconds(), 0.0)
+        metrics.terminal(record.pipeline_type, record.status.value, duration)
+        webhook_url = record.metadata.get("webhook_url") or record.payload.get("webhook_url")
+        if not webhook_url:
+            return
+        enabled = bool(getattr(self, "webhooks_enabled", True))
+        if not enabled:
+            return
+        timeout = float(getattr(self, "webhook_timeout_seconds", 10.0))
+        threading.Thread(
+            target=_dispatch_webhook,
+            args=(str(webhook_url), record, event, timeout),
+            daemon=True,
+        ).start()
+
+
+def _resolve_priority(payload: dict[str, Any], explicit: int | None = None) -> int:
+    raw = explicit if explicit is not None else payload.get("priority", 0)
+    try:
+        return max(0, min(10, int(raw)))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _normalize_error_detail(error_detail: JobError | dict[str, Any] | None) -> JobError | None:
+    if error_detail is None:
+        return None
+    if isinstance(error_detail, JobError):
+        return error_detail
+    return JobError.from_dict(error_detail)
+
+
+def _dispatch_webhook(url: str, record: JobRecord, event: str, timeout: float) -> None:
+    import json
+
+    payload = json.dumps(
+        {
+            "event": event,
+            "job_id": record.id,
+            "status": record.status.value,
+            "output_path": record.output_path,
+            "metadata": record.metadata,
+            "error": record.error,
+            "error_detail": record.error_detail.to_dict() if record.error_detail else None,
+        },
+        ensure_ascii=True,
+    ).encode("utf-8")
+    request = Request(
+        url,
+        data=payload,
+        headers={"Content-Type": "application/json", "User-Agent": "ai-video-engine-webhook"},
+        method="POST",
+    )
+    try:
+        with urlopen(request, timeout=timeout):
+            pass
+    except (OSError, URLError) as exc:
+        logger.warning("webhook dispatch failed for job {} to {}: {}", record.id, url, exc)

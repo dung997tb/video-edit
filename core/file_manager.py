@@ -17,12 +17,15 @@ STEP_NAMES = {
 
 
 class FileManager:
-    def __init__(self, temp_root: Path, output_root: Path, job_id: str) -> None:
+    def __init__(self, temp_root: Path, output_root: Path, job_id: str, output_name: str | None = None) -> None:
         self.temp_root = Path(temp_root)
         self.output_root = Path(output_root)
         self.job_id = job_id
         self.job_temp_dir = self.temp_root / job_id
-        self.job_output_dir = self.output_root / job_id
+        
+        import re
+        safe_output_name = re.sub(r'[^a-zA-Z0-9_\-\.]', '_', output_name) if output_name else job_id
+        self.job_output_dir = self.output_root / safe_output_name
 
     def ensure_dirs(self) -> None:
         self.job_temp_dir.mkdir(parents=True, exist_ok=True)

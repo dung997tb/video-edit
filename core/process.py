@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import subprocess
 import threading
+import time
 from dataclasses import dataclass
 from typing import Any, Callable
 
@@ -24,30 +25,52 @@ class SubprocessResult:
 class ProcessRegistry:
     def __init__(self) -> None:
         self._lock = threading.Lock()
-        self._processes: dict[str, subprocess.Popen[str]] = {}
+        self._processes: dict[str, dict[int, subprocess.Popen[str]]] = {}
 
     def register(self, job_id: str, process: subprocess.Popen[str]) -> None:
         with self._lock:
-            self._processes[job_id] = process
+            self._processes.setdefault(job_id, {})[process.pid] = process
 
-    def unregister(self, job_id: str) -> None:
+    def unregister(self, job_id: str, process: subprocess.Popen[str] | None = None) -> None:
         with self._lock:
-            self._processes.pop(job_id, None)
+            if process is None:
+                self._processes.pop(job_id, None)
+                return
+            processes = self._processes.get(job_id)
+            if not processes:
+                return
+            processes.pop(process.pid, None)
+            if not processes:
+                self._processes.pop(job_id, None)
 
     def get(self, job_id: str) -> subprocess.Popen[str] | None:
         with self._lock:
-            return self._processes.get(job_id)
+            processes = self._processes.get(job_id, {})
+            for process in processes.values():
+                if process.poll() is None:
+                    return process
+            return next(iter(processes.values()), None)
+
+    def list(self, job_id: str) -> list[subprocess.Popen[str]]:
+        with self._lock:
+            return list(self._processes.get(job_id, {}).values())
 
     def cancel(self, job_id: str, grace_seconds: float) -> bool:
-        process = self.get(job_id)
-        if process is None or process.poll() is not None:
+        processes = [process for process in self.list(job_id) if process.poll() is None]
+        if not processes:
             return False
-        process.terminate()
-        try:
-            process.wait(timeout=grace_seconds)
-        except subprocess.TimeoutExpired:
-            process.kill()
-            process.wait(timeout=grace_seconds)
+        for process in processes:
+            process.terminate()
+        for process in processes:
+            try:
+                process.wait(timeout=grace_seconds)
+            except subprocess.TimeoutExpired:
+                process.kill()
+        for process in processes:
+            try:
+                process.wait(timeout=grace_seconds)
+            except subprocess.TimeoutExpired:
+                pass
         return True
 
 
@@ -60,6 +83,7 @@ def run_subprocess(
     cancel_check: Callable[[], bool],
     grace_seconds: float,
     cwd: str | None = None,
+    timeout: float | None = None,
 ) -> SubprocessResult:
     process = subprocess.Popen(
         command,
@@ -73,6 +97,7 @@ def run_subprocess(
     job_manager.set_pid(job_id, process.pid)
     stdout = ""
     stderr = ""
+    started_at = time.monotonic()
     try:
         while True:
             try:
@@ -82,6 +107,11 @@ def run_subprocess(
                 if cancel_check():
                     process_registry.cancel(job_id, grace_seconds)
                     raise JobCancelledError(f"job {job_id} cancelled while running: {' '.join(command)}")
+                if timeout is not None and time.monotonic() - started_at >= timeout:
+                    process_registry.cancel(job_id, grace_seconds)
+                    raise SubprocessExecutionError(
+                        f"command timed out after {timeout:.1f}s: {' '.join(command)}"
+                    )
         result = SubprocessResult(
             command=command,
             pid=process.pid,
@@ -95,4 +125,4 @@ def run_subprocess(
             )
         return result
     finally:
-        process_registry.unregister(job_id)
+        process_registry.unregister(job_id, process)

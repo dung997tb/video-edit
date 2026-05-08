@@ -64,3 +64,50 @@ class JobManagerTests(unittest.TestCase):
         self.assertIsNone(completed.pid)
         self.assertIsNotNone(failed)
         self.assertIsNone(failed.pid)
+
+    def test_worker_fencing_blocks_stale_worker_writes(self) -> None:
+        services = make_services(make_test_root("job-manager-fencing"))
+        job = services.job_manager.create_job(pipeline_type="dubbing", source_sha256="hash-fence")
+        claimed = services.job_manager.claim_jobs("worker-a", limit=1, lease_seconds=30)[0]
+        self.assertEqual(claimed.worker_id, "worker-a")
+
+        blocked_progress = services.job_manager.update_progress(
+            job.id,
+            worker_id="worker-b",
+            step_index=1,
+            total_steps=3,
+            current_step="step-b",
+            progress=33,
+        )
+        blocked_complete = services.job_manager.complete_job(
+            job.id,
+            "output.mp4",
+            worker_id="worker-b",
+        )
+        blocked_fail = services.job_manager.fail_job(
+            job.id,
+            "boom",
+            worker_id="worker-b",
+        )
+
+        self.assertIsNone(blocked_progress)
+        self.assertIsNone(blocked_complete)
+        self.assertIsNone(blocked_fail)
+        refreshed = services.job_manager.get_job(job.id)
+        self.assertIsNotNone(refreshed)
+        self.assertEqual(refreshed.status, JobStatus.RUNNING)
+        self.assertEqual(refreshed.worker_id, "worker-a")
+
+    def test_priority_jobs_are_claimed_first(self) -> None:
+        services = make_services(make_test_root("job-manager-priority"))
+        low = services.job_manager.create_job(pipeline_type="dubbing", source_sha256="hash-low")
+        high = services.job_manager.create_job(
+            pipeline_type="dubbing",
+            source_sha256="hash-high",
+            payload={"priority": 5},
+        )
+
+        claimed = services.job_manager.claim_jobs("worker-a", limit=1, lease_seconds=30)
+
+        self.assertEqual([job.id for job in claimed], [high.id])
+        self.assertNotEqual(claimed[0].id, low.id)

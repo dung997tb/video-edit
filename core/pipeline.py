@@ -9,7 +9,8 @@ from core.cache import make_step_cache_key
 from core.context import PipelineContext
 from core.exceptions import JobCancelledError
 from core.file_manager import FileManager
-from core.models import JobRecord
+from core.models import JobError, JobErrorCode, JobRecord
+from core.process import SubprocessExecutionError
 from core.retry import execute_with_retry
 
 if TYPE_CHECKING:
@@ -44,11 +45,12 @@ class PipelineRunner:
         context = self._build_context(job)
         pipeline = self.services.pipeline_builders[job.pipeline_type](job, self.services)
         total_steps = len(pipeline)
+        worker_id = self.services.settings.resolved_worker_id
         stop_event = threading.Event()
         heartbeat = LeaseHeartbeat(
             services=self.services,
             job_id=job.id,
-            worker_id=self.services.settings.resolved_worker_id,
+            worker_id=worker_id,
             stop_event=stop_event,
         )
         heartbeat_thread = threading.Thread(target=heartbeat.run, daemon=True)
@@ -56,15 +58,17 @@ class PipelineRunner:
         try:
             self.services.job_manager.heartbeat(
                 job.id,
-                self.services.settings.resolved_worker_id,
+                worker_id,
                 job.pid,
                 self.services.settings.job_lease_seconds,
             )
             for index, step in enumerate(pipeline, start=1):
+                active_step = step.NAME
                 self._raise_if_cancel_requested(job.id)
                 progress = int(((index - 1) / total_steps) * 100) if total_steps else 0
                 self.services.job_manager.update_progress(
                     job.id,
+                    worker_id=worker_id,
                     step_index=index - 1,
                     total_steps=total_steps,
                     current_step=step.NAME,
@@ -77,11 +81,14 @@ class PipelineRunner:
                     step.upstream_artifact_hashes(context),
                     self.services.settings.cache_version,
                 )
-                cached = self.services.cache_manager.load_step_result(job.id, step_hash, context.file_manager)
+                cached = None
+                if not self._cache_bust_enabled(context):
+                    cached = self.services.cache_manager.load_step_result(job.id, step_hash, context.file_manager)
                 if cached is not None:
                     context.update(cached.context_patch)
                     self.services.job_manager.update_progress(
                         job.id,
+                        worker_id=worker_id,
                         step_index=index,
                         total_steps=total_steps,
                         current_step=f"{step.NAME}:cached",
@@ -89,38 +96,61 @@ class PipelineRunner:
                     )
                     continue
 
-                result = execute_with_retry(
-                    lambda: step.execute(context, self.services),
-                    attempts=self.services.settings.step_retry_attempts,
-                    delay_seconds=self.services.settings.step_retry_delay_seconds,
-                )
+                result = self._run_step_with_observability(step, context)
                 context.update(result.context_patch)
                 self.services.cache_manager.save_step_result(job.id, step.NAME, step_hash, result, context.file_manager)
                 self.services.job_manager.update_progress(
                     job.id,
+                    worker_id=worker_id,
                     step_index=index,
                     total_steps=total_steps,
                     current_step=step.NAME,
                     progress=int((index / total_steps) * 100),
                 )
 
-            self.services.job_manager.complete_job(job.id, context.output_video, metadata=context.metadata)
+            self.services.job_manager.complete_job(
+                job.id,
+                context.output_video,
+                metadata=context.metadata,
+                worker_id=worker_id,
+            )
             return context
         except JobCancelledError as exc:
-            self.services.job_manager.fail_job(job.id, str(exc), cancelled=True, metadata=context.metadata)
+            self.services.job_manager.fail_job(
+                job.id,
+                str(exc),
+                cancelled=True,
+                error_detail=JobError(
+                    code=JobErrorCode.CANCELLED.value,
+                    message=str(exc),
+                    step=locals().get("active_step"),
+                    retriable=False,
+                ),
+                metadata=context.metadata,
+                worker_id=worker_id,
+            )
             raise
         except Exception as exc:
-            self.services.job_manager.fail_job(job.id, str(exc), cancelled=False, metadata=context.metadata)
+            self.services.job_manager.fail_job(
+                job.id,
+                str(exc),
+                cancelled=False,
+                error_detail=self._build_error_detail(exc, locals().get("active_step")),
+                metadata=context.metadata,
+                worker_id=worker_id,
+            )
             raise
         finally:
             stop_event.set()
             heartbeat_thread.join(timeout=1)
 
     def _build_context(self, job: JobRecord) -> PipelineContext:
+        output_name = job.payload.get("output_name")
         file_manager = FileManager(
             temp_root=self.services.settings.temp_dir,
             output_root=self.services.settings.output_dir,
             job_id=job.id,
+            output_name=output_name,
         )
         file_manager.ensure_dirs()
         input_video = self._resolve_input_video(job, file_manager)
@@ -154,3 +184,53 @@ class PipelineRunner:
     def _raise_if_cancel_requested(self, job_id: str) -> None:
         if self.services.job_manager.is_cancel_requested(job_id):
             raise JobCancelledError(f"job {job_id} cancelled by user")
+
+    def _cache_bust_enabled(self, context: PipelineContext) -> bool:
+        return bool(context.state.get("cache_bust") or context.state.get("bypass_cache"))
+
+    def _run_step_with_observability(self, step: "BaseModule", context: PipelineContext):
+        tracing_enabled = bool(getattr(self.services.settings, "tracing_enabled", False))
+        if not tracing_enabled:
+            return execute_with_retry(
+                lambda s=step, c=context: s.execute(c, self.services),
+                attempts=self.services.settings.step_retry_attempts,
+                delay_seconds=self.services.settings.step_retry_delay_seconds,
+            )
+        try:
+            from opentelemetry import trace
+        except ImportError:
+            return execute_with_retry(
+                lambda s=step, c=context: s.execute(c, self.services),
+                attempts=self.services.settings.step_retry_attempts,
+                delay_seconds=self.services.settings.step_retry_delay_seconds,
+            )
+        tracer = trace.get_tracer(__name__)
+        with tracer.start_as_current_span(f"pipeline.step.{step.NAME}") as span:
+            span.set_attribute("job.id", context.job_id)
+            span.set_attribute("step.name", step.NAME)
+            return execute_with_retry(
+                lambda s=step, c=context: s.execute(c, self.services),
+                attempts=self.services.settings.step_retry_attempts,
+                delay_seconds=self.services.settings.step_retry_delay_seconds,
+            )
+
+    def _build_error_detail(self, exc: Exception, step_name: str | None) -> JobError:
+        code = JobErrorCode.UNKNOWN.value
+        if isinstance(exc, FileNotFoundError):
+            code = JobErrorCode.INPUT_NOT_FOUND.value
+        elif isinstance(exc, SubprocessExecutionError):
+            code = JobErrorCode.FFMPEG_FAILED.value
+        elif step_name == "transcript":
+            code = JobErrorCode.TRANSCRIPTION_FAILED.value
+        elif step_name == "translate":
+            code = JobErrorCode.TRANSLATION_FAILED.value
+        elif step_name == "tts":
+            code = JobErrorCode.TTS_FAILED.value
+        elif step_name in {"synced_audio", "voice_sync_retry"}:
+            code = JobErrorCode.VOICE_SYNC_FAILED.value
+        return JobError(
+            code=code,
+            message=str(exc),
+            step=step_name,
+            retriable=not isinstance(exc, (FileNotFoundError, ValueError)),
+        )

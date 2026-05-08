@@ -1,0 +1,9 @@
+{
+  "pipeline_type": "ad_video",
+  "payload": {
+    "ad_text": "Mùa xuân này, hãy để những bước chân của bạn nở hoa cùng Mewo Camm. Đậm chất riêng, bừng sức sống.",
+    "tts_voice": "vi-VN-HoaiMyNeural",
+    "burn_subtitle": true,
+    "tts_engine": "edge-tts"
+  }
+}

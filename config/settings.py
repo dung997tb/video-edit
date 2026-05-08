@@ -84,9 +84,13 @@ class Settings(BaseSettings):
     libretranslate_url: str | None = Field(default=None, alias="LIBRETRANSLATE_URL")
 
     tts_engine: str = Field(default="edge-tts", alias="TTS_ENGINE")
+    tts_parallel_workers: int = Field(default=1, alias="TTS_PARALLEL_WORKERS")
     tts_default_voice: str = Field(default="vi-VN-HoaiMyNeural", alias="TTS_DEFAULT_VOICE")
     tts_rate: str = Field(default="+0%", alias="TTS_RATE")
     tts_volume: str = Field(default="+0%", alias="TTS_VOLUME")
+    openai_api_key: str | None = Field(default=None, alias="OPENAI_API_KEY")
+    openai_tts_model: str = Field(default="gpt-4o-mini-tts", alias="OPENAI_TTS_MODEL")
+    google_cloud_tts_key: str | None = Field(default=None, alias="GOOGLE_CLOUD_TTS_KEY")
 
     supabase_url: str | None = Field(default=None, alias="SUPABASE_URL")
     supabase_key: str | None = Field(default=None, alias="SUPABASE_KEY")
@@ -103,6 +107,9 @@ class Settings(BaseSettings):
 
     max_workers: int = Field(default=2, alias="MAX_WORKERS")
     worker_poll_interval_seconds: float = Field(default=1.0, alias="WORKER_POLL_INTERVAL_SECONDS")
+    worker_poll_min_seconds: float = Field(default=0.2, alias="WORKER_POLL_MIN_SECONDS")
+    worker_poll_max_seconds: float = Field(default=1.0, alias="WORKER_POLL_MAX_SECONDS")
+    worker_poll_backoff_factor: float = Field(default=1.5, alias="WORKER_POLL_BACKOFF_FACTOR")
     job_lease_seconds: int = Field(default=30, alias="JOB_LEASE_SECONDS")
     heartbeat_interval_seconds: float = Field(default=10.0, alias="HEARTBEAT_INTERVAL_SECONDS")
     cancel_grace_seconds: float = Field(default=5.0, alias="CANCEL_GRACE_SECONDS")
@@ -116,6 +123,17 @@ class Settings(BaseSettings):
     api_secret_key: str = Field(default="change-me-in-production", alias="API_SECRET_KEY")
     api_auth_enabled: bool = Field(default=True, alias="API_AUTH_ENABLED")
     api_embedded_worker: bool = Field(default=True, alias="API_EMBEDDED_WORKER")
+    api_allow_input_path: bool = Field(default=False, alias="API_ALLOW_INPUT_PATH")
+    api_allow_client_source_sha256: bool = Field(default=False, alias="API_ALLOW_CLIENT_SOURCE_SHA256")
+    api_allowed_input_uri_schemes: str = Field(default="http,https", alias="API_ALLOWED_INPUT_URI_SCHEMES")
+    api_upload_max_bytes: int = Field(default=536_870_912, alias="API_UPLOAD_MAX_BYTES")
+    api_rate_limit_per_minute: int = Field(default=60, alias="API_RATE_LIMIT_PER_MINUTE")
+
+    webhooks_enabled: bool = Field(default=False, alias="WEBHOOKS_ENABLED")
+    webhook_timeout_seconds: float = Field(default=10.0, alias="WEBHOOK_TIMEOUT_SECONDS")
+
+    metrics_enabled: bool = Field(default=True, alias="METRICS_ENABLED")
+    tracing_enabled: bool = Field(default=False, alias="TRACING_ENABLED")
 
     worker_id: str | None = Field(default=None, alias="WORKER_ID")
     log_level: str = Field(default="INFO", alias="LOG_LEVEL")

@@ -6,6 +6,7 @@ from modules.ai.transcriber import TranscriberModule
 from modules.ai.translator import TranslatorModule
 from modules.ai.tts import TTSModule
 from modules.ai.voice_sync import VoiceSyncModule
+from modules.ai.voice_sync_retry import VoiceSyncRetryModule
 
 __all__ = [
     "AudioMixerModule",
@@ -15,5 +16,6 @@ __all__ = [
     "TranslatorModule",
     "TTSModule",
     "VoiceSyncModule",
+    "VoiceSyncRetryModule",
     "build_dubbing_pipeline",
 ]

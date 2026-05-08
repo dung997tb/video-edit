@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -13,6 +14,13 @@ try:
     from api.main import create_app
 except Exception:  # pragma: no cover - optional dependency in minimal env
     create_app = None
+
+REQUIRE_API_AUTH_TESTS = str(os.getenv("REQUIRE_API_AUTH_TESTS", "0")).strip().lower() in {"1", "true", "yes"}
+if REQUIRE_API_AUTH_TESTS and (TestClient is None or create_app is None):
+    raise RuntimeError(
+        "REQUIRE_API_AUTH_TESTS is enabled but FastAPI test stack is unavailable; "
+        "install API dependencies before running this lane."
+    )
 
 
 def _fake_services(auth_enabled: bool, secret_key: str = "test-secret"):

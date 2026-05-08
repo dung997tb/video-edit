@@ -28,7 +28,11 @@ def sha256_text(text: str) -> str:
 
 
 def hash_file(path: str | Path) -> str:
-    return sha256_bytes(Path(path).read_bytes())
+    h = hashlib.sha256()
+    with Path(path).open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            h.update(chunk)
+    return h.hexdigest()
 
 
 def _looks_like_path(value: str) -> bool:

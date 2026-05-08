@@ -10,11 +10,11 @@ def _build_scale_filter(width: int | None, height: int | None, keep_aspect: bool
     if width is None and height is None:
         raise ValueError("scale operation requires width or height")
     if width is None:
-        return f"scale=-2:{int(height)}"
+        return f"scale=-2:{int(height)}:force_divisible_by=2"
     if height is None:
-        return f"scale={int(width)}:-2"
+        return f"scale={int(width)}:-2:force_divisible_by=2"
     if keep_aspect:
-        return f"scale={int(width)}:{int(height)}:force_original_aspect_ratio=decrease"
+        return f"scale={int(width)}:{int(height)}:force_original_aspect_ratio=decrease:force_divisible_by=2"
     return f"scale={int(width)}:{int(height)}"
 
 

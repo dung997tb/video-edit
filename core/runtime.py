@@ -68,6 +68,8 @@ def build_services(settings: Settings | None = None) -> AppServices:
     artifact_store = build_artifact_store(active_settings)
     cache_manager = CacheManager(artifact_store=artifact_store, cache_version=active_settings.cache_version)
     job_manager = JobManager(build_job_repository(active_settings))
+    job_manager.webhooks_enabled = bool(active_settings.webhooks_enabled)
+    job_manager.webhook_timeout_seconds = float(active_settings.webhook_timeout_seconds)
     process_registry = ProcessRegistry()
     return AppServices(
         settings=active_settings,
@@ -82,3 +84,8 @@ def build_services(settings: Settings | None = None) -> AppServices:
 @lru_cache(maxsize=1)
 def get_services() -> AppServices:
     return build_services()
+
+
+def reset_services() -> None:
+    """Clear the cached service container for tests and runtime config reloads."""
+    get_services.cache_clear()

@@ -1,0 +1,19 @@
+{
+  "name": "canary-low-level-smoke",
+  "pipeline_type": "low_level",
+  "payload": {
+    "operations": [
+      {
+        "name": "cut",
+        "start": 0.0,
+        "end": 3.0
+      },
+      {
+        "name": "scale",
+        "width": 854,
+        "height": 480,
+        "keep_aspect": true
+      }
+    ]
+  }
+}

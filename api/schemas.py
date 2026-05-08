@@ -14,12 +14,14 @@ class CreateJobRequest(BaseModel):
     source_key: str | None = None
     payload: dict[str, Any] = Field(default_factory=dict)
     metadata: dict[str, Any] = Field(default_factory=dict)
+    priority: int | None = None
 
 
 class JobResponse(BaseModel):
     id: str
     status: str
     pipeline_type: str
+    priority: int = 0
     input_path: str | None = None
     input_uri: str | None = None
     output_path: str | None = None
@@ -34,6 +36,7 @@ class JobResponse(BaseModel):
     total_steps: int
     current_step: str | None = None
     error: str | None = None
+    error_detail: dict[str, Any] | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 

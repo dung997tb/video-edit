@@ -46,7 +46,9 @@ class TranslatorModule(BaseModule):
             },
             cache_version=services.settings.cache_version,
         )
-        payload = services.cache_manager.load_operation_result("translate", cache_key)
+        payload = None
+        if not bool(context.state.get("cache_bust") or context.state.get("bypass_cache")):
+            payload = services.cache_manager.load_operation_result("translate", cache_key)
         if payload is None:
             translated_segments = []
             translator = self._build_translator(

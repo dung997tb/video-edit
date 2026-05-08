@@ -5,6 +5,7 @@ from concurrent.futures import Future, ThreadPoolExecutor
 from typing import Any
 
 from core.logger import logger
+from core.metrics import metrics
 from core.pipeline import PipelineRunner
 
 
@@ -13,19 +14,32 @@ class WorkerService:
         self.services = services
         self.executor = ThreadPoolExecutor(max_workers=self.services.settings.max_workers)
         self.pipeline_runner = PipelineRunner(services)
+        default_interval = float(getattr(self.services.settings, "worker_poll_interval_seconds", 1.0))
+        configured_min = float(getattr(self.services.settings, "worker_poll_min_seconds", default_interval))
+        configured_max = float(getattr(self.services.settings, "worker_poll_max_seconds", default_interval))
+        self._poll_min_seconds = max(0.01, configured_min)
+        self._poll_max_seconds = max(self._poll_min_seconds, configured_max)
+        self._poll_backoff_factor = max(
+            1.0,
+            float(getattr(self.services.settings, "worker_poll_backoff_factor", 1.5)),
+        )
+        self._current_poll_seconds = self._poll_min_seconds
         self._futures: dict[str, Future] = {}
         self._stop_event = threading.Event()
         self._thread: threading.Thread | None = None
 
     def run_forever(self) -> None:
         self._stop_event.clear()
+        self._current_poll_seconds = self._poll_min_seconds
         try:
             while not self._stop_event.is_set():
                 try:
-                    self.run_once()
+                    activity = self.run_once()
                 except Exception as exc:
                     logger.exception("worker loop iteration failed: {}", exc)
-                self._stop_event.wait(self.services.settings.worker_poll_interval_seconds)
+                    activity = False
+                self._adjust_poll_interval(activity)
+                self._stop_event.wait(self._current_poll_seconds)
         finally:
             self.executor.shutdown(wait=False, cancel_futures=False)
 
@@ -41,12 +55,14 @@ class WorkerService:
         if self._thread and self._thread.is_alive() and threading.current_thread() is not self._thread:
             self._thread.join(timeout=timeout)
 
-    def run_once(self) -> None:
+    def run_once(self) -> bool:
         self.services.job_manager.release_stale_leases()
-        self._collect_finished()
+        had_finished = self._collect_finished()
         available_slots = self.services.settings.max_workers - len(self._futures)
+        if metrics.enabled:
+            metrics.active_jobs.set(len(self._futures))
         if available_slots <= 0:
-            return
+            return had_finished
         jobs = self.services.job_manager.claim_jobs(
             worker_id=self.services.settings.resolved_worker_id,
             limit=available_slots,
@@ -54,8 +70,11 @@ class WorkerService:
         )
         for job in jobs:
             self._futures[job.id] = self.executor.submit(self.pipeline_runner.run_job, job)
+        if metrics.enabled:
+            metrics.active_jobs.set(len(self._futures))
+        return had_finished or bool(jobs)
 
-    def _collect_finished(self) -> None:
+    def _collect_finished(self) -> bool:
         finished = [job_id for job_id, future in self._futures.items() if future.done()]
         for job_id in finished:
             future = self._futures.pop(job_id)
@@ -63,3 +82,15 @@ class WorkerService:
                 future.result()
             except Exception as exc:
                 logger.exception("job {} failed in worker loop: {}", job_id, exc)
+        if metrics.enabled:
+            metrics.active_jobs.set(len(self._futures))
+        return bool(finished)
+
+    def _adjust_poll_interval(self, activity: bool) -> None:
+        if activity:
+            self._current_poll_seconds = self._poll_min_seconds
+            return
+        self._current_poll_seconds = min(
+            self._poll_max_seconds,
+            self._current_poll_seconds * self._poll_backoff_factor,
+        )

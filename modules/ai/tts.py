@@ -1,12 +1,13 @@
 from __future__ import annotations
 
-import asyncio
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 from core.cache import canonical_json, make_operation_cache_key, sha256_text, stable_value_signature
 from core.models import StepResult
 from core.process import run_subprocess
 from modules.base import BaseModule
+from modules.ai.tts_backends import build_tts_backend
 from modules.registry import register
 
 
@@ -51,7 +52,9 @@ class TTSModule(BaseModule):
             },
             cache_version=services.settings.cache_version,
         )
-        cached_payload = services.cache_manager.load_operation_bundle("tts", cache_key, context.file_manager)
+        cached_payload = None
+        if not bool(context.state.get("cache_bust") or context.state.get("bypass_cache")):
+            cached_payload = services.cache_manager.load_operation_bundle("tts", cache_key, context.file_manager)
         if cached_payload is not None:
             cached_segments = cached_payload.get("tts_segments", [])
             cached_metadata = dict(context.metadata)
@@ -63,60 +66,17 @@ class TTSModule(BaseModule):
                 },
                 artifacts={"tts_segments": [segment["path"] for segment in cached_segments]},
             )
-        artifacts: list[str] = []
-        tts_segments: list[dict] = []
-        for index, segment in enumerate(source_segments, start=1):
-            wav_output = context.file_manager.step_file("tts", n=index)
-            if segment["text"].strip():
-                mp3_output = context.file_manager.temp(f"tts_tmp_{index:03d}.mp3")
-                self._generate_mp3(segment["text"], mp3_output, voice=voice, rate=rate, volume=volume)
-                run_subprocess(
-                    [
-                        services.settings.ffmpeg_path,
-                        "-y",
-                        "-i",
-                        str(mp3_output),
-                        "-ar",
-                        "24000",
-                        "-ac",
-                        "1",
-                        str(wav_output),
-                    ],
-                    job_id=context.job_id,
-                    job_manager=services.job_manager,
-                    process_registry=services.process_registry,
-                    cancel_check=lambda: services.job_manager.is_cancel_requested(context.job_id),
-                    grace_seconds=services.settings.cancel_grace_seconds,
-                )
-            else:
-                run_subprocess(
-                    [
-                        services.settings.ffmpeg_path,
-                        "-y",
-                        "-f",
-                        "lavfi",
-                        "-i",
-                        "anullsrc=r=24000:cl=mono",
-                        "-t",
-                        f"{max(segment['end'] - segment['start'], 0.1):.3f}",
-                        str(wav_output),
-                    ],
-                    job_id=context.job_id,
-                    job_manager=services.job_manager,
-                    process_registry=services.process_registry,
-                    cancel_check=lambda: services.job_manager.is_cancel_requested(context.job_id),
-                    grace_seconds=services.settings.cancel_grace_seconds,
-                )
-            artifacts.append(str(wav_output))
-            tts_segments.append(
-                {
-                    "index": index,
-                    "start": segment["start"],
-                    "end": segment["end"],
-                    "text": segment["text"],
-                    "path": str(wav_output),
-                }
-            )
+        backend = build_tts_backend(services.settings)
+        tts_segments = self._generate_all_segments(
+            source_segments,
+            backend=backend,
+            voice=voice,
+            rate=rate,
+            volume=volume,
+            context=context,
+            services=services,
+        )
+        artifacts = [segment["path"] for segment in tts_segments]
         metadata = dict(context.metadata)
         metadata["tts_voice"] = voice
         services.cache_manager.save_operation_bundle(
@@ -131,21 +91,90 @@ class TTSModule(BaseModule):
             artifacts={"tts_segments": artifacts},
         )
 
-    def _generate_mp3(self, text: str, output_path: Path, *, voice: str, rate: str, volume: str) -> None:
-        try:
-            import edge_tts
-        except ImportError as exc:
-            raise RuntimeError("edge-tts is required for TTS") from exc
+    def _generate_all_segments(self, segments, *, backend, voice, rate, volume, context, services) -> list[dict]:
+        worker_count = min(
+            max(1, int(context.state.get("tts_parallel_workers", getattr(services.settings, "tts_parallel_workers", 1)))),
+            len(segments),
+        )
+        if worker_count == 1:
+            return [
+                self._generate_segment(segment, index, backend=backend, voice=voice, rate=rate, volume=volume, context=context, services=services)
+                for index, segment in enumerate(segments, start=1)
+            ]
+        results: dict[int, dict] = {}
+        with ThreadPoolExecutor(max_workers=worker_count) as pool:
+            futures = {
+                pool.submit(
+                    self._generate_segment,
+                    segment,
+                    index,
+                    backend=backend,
+                    voice=voice,
+                    rate=rate,
+                    volume=volume,
+                    context=context,
+                    services=services,
+                ): index
+                for index, segment in enumerate(segments, start=1)
+            }
+            for future in as_completed(futures):
+                index = futures[future]
+                results[index] = future.result()
+        return [results[index] for index in sorted(results)]
 
-        async def _run() -> None:
-            communicator = edge_tts.Communicate(text, voice=voice, rate=rate, volume=volume)
-            await communicator.save(str(output_path))
+    def _generate_segment(self, segment, index: int, *, backend, voice: str, rate: str, volume: str, context, services) -> dict:
+        wav_output = context.file_manager.step_file("tts", n=index)
+        if services.job_manager.is_cancel_requested(context.job_id):
+            from core.exceptions import JobCancelledError
 
-        loop = asyncio.new_event_loop()
-        try:
-            asyncio.set_event_loop(loop)
-            loop.run_until_complete(_run())
-            loop.run_until_complete(loop.shutdown_asyncgens())
-        finally:
-            asyncio.set_event_loop(None)
-            loop.close()
+            raise JobCancelledError(f"job {context.job_id} cancelled before TTS segment {index}")
+        if segment["text"].strip():
+            mp3_output = context.file_manager.temp(f"tts_tmp_{index:03d}.mp3")
+            self._generate_mp3(segment["text"], mp3_output, backend=backend, voice=voice, rate=rate, volume=volume)
+            run_subprocess(
+                [
+                    services.settings.ffmpeg_path,
+                    "-y",
+                    "-i",
+                    str(mp3_output),
+                    "-ar",
+                    "24000",
+                    "-ac",
+                    "1",
+                    str(wav_output),
+                ],
+                job_id=context.job_id,
+                job_manager=services.job_manager,
+                process_registry=services.process_registry,
+                cancel_check=lambda: services.job_manager.is_cancel_requested(context.job_id),
+                grace_seconds=services.settings.cancel_grace_seconds,
+            )
+        else:
+            run_subprocess(
+                [
+                    services.settings.ffmpeg_path,
+                    "-y",
+                    "-f",
+                    "lavfi",
+                    "-i",
+                    "anullsrc=r=24000:cl=mono",
+                    "-t",
+                    f"{max(segment['end'] - segment['start'], 0.1):.3f}",
+                    str(wav_output),
+                ],
+                job_id=context.job_id,
+                job_manager=services.job_manager,
+                process_registry=services.process_registry,
+                cancel_check=lambda: services.job_manager.is_cancel_requested(context.job_id),
+                grace_seconds=services.settings.cancel_grace_seconds,
+            )
+        return {
+            "index": index,
+            "start": segment["start"],
+            "end": segment["end"],
+            "text": segment["text"],
+            "path": str(wav_output),
+        }
+
+    def _generate_mp3(self, text: str, output_path: Path, *, backend, voice: str, rate: str, volume: str) -> None:
+        backend.generate(text, output_path, voice=voice, rate=rate, volume=volume)

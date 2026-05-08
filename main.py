@@ -32,6 +32,7 @@ from core.batch_engine import WorkerService
 from config import settings as default_settings
 from core.cache import hash_file
 from core.pipeline import PipelineRunner
+from core.preflight import verify_services_preflight
 from core.runtime import build_services, get_services
 
 cli = typer.Typer(help="AI video engine entrypoints")
@@ -54,6 +55,33 @@ def api(host: str | None = None, port: int | None = None) -> None:
 def worker() -> None:
     services = get_services()
     WorkerService(services).run_forever()
+
+
+@cli.command("preflight-db")
+def preflight_db() -> None:
+    services = get_services()
+    result = verify_services_preflight(services)
+    typer.echo(json.dumps(result, ensure_ascii=False, indent=2))
+    if not result.get("ok", False):
+        raise RuntimeError("database preflight failed")
+
+
+@cli.command("benchmark-worker-pools")
+def benchmark_worker_pools(
+    workers: int = 2,
+    jobs: int = 8,
+    cpu_iterations: int = 2_500_000,
+    subprocess_delay: float = 0.25,
+) -> None:
+    from benchmarks.worker_pool_benchmark import run_benchmarks
+
+    report = run_benchmarks(
+        workers=workers,
+        jobs=jobs,
+        cpu_iterations=cpu_iterations,
+        subprocess_delay=subprocess_delay,
+    )
+    typer.echo(json.dumps(report, ensure_ascii=False, indent=2))
 
 
 @cli.command()

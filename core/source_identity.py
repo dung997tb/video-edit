@@ -1,7 +1,19 @@
 from __future__ import annotations
 
+import re
+
 from core.artifact_store import ArtifactStore
 from core.cache import hash_file, sha256_bytes, sha256_text
+
+
+_SHA256_HEX_RE = re.compile(r"^[0-9a-fA-F]{64}$")
+
+
+def _normalize_sha256(value: str) -> str:
+    candidate = value.strip().lower()
+    if not _SHA256_HEX_RE.fullmatch(candidate):
+        raise ValueError("source_sha256 must be a valid 64-char hex sha256")
+    return candidate
 
 
 def resolve_source_sha256(
@@ -11,9 +23,8 @@ def resolve_source_sha256(
     input_uri: str | None = None,
     source_key: str | None = None,
     artifact_store: ArtifactStore | None = None,
+    allow_explicit_source_sha256: bool = False,
 ) -> str:
-    if source_sha256:
-        return source_sha256
     if input_path:
         try:
             return hash_file(input_path)
@@ -28,4 +39,10 @@ def resolve_source_sha256(
             raise ValueError(f"source_key not found: {source_key}") from exc
     if input_uri:
         return sha256_text(f"input_uri:{input_uri}")
-    raise ValueError("source_sha256 is required unless input_path, source_key, or input_uri is provided")
+    if source_sha256:
+        if not allow_explicit_source_sha256:
+            raise ValueError(
+                "source_sha256 direct input is disabled; provide input_path, input_uri, or source_key"
+            )
+        return _normalize_sha256(source_sha256)
+    raise ValueError("input_path, source_key, input_uri, or source_sha256 is required")

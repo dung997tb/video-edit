@@ -31,3 +31,14 @@ class SourceIdentityTests(unittest.TestCase):
         )
 
         self.assertEqual(resolved, sha256_text(f"input_uri:{uri}"))
+
+    def test_explicit_source_sha256_is_rejected_by_default(self) -> None:
+        with self.assertRaises(ValueError):
+            resolve_source_sha256(source_sha256="a" * 64)
+
+    def test_explicit_source_sha256_can_be_enabled(self) -> None:
+        resolved = resolve_source_sha256(
+            source_sha256="A" * 64,
+            allow_explicit_source_sha256=True,
+        )
+        self.assertEqual(resolved, "a" * 64)

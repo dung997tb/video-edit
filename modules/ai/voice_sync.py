@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import subprocess
 from dataclasses import dataclass
 
 from core.cache import stable_value_signature
@@ -153,19 +152,32 @@ class VoiceSyncModule(BaseModule):
         output_path = context.file_manager.step_file("synced_audio")
         plans = plan_voice_segments(
             context.tts_segments,
-            resolve_duration=lambda segment: self._probe_duration(segment["path"], services.settings.ffprobe_path),
+            resolve_duration=lambda segment: self._probe_duration(segment["path"], context, services),
             max_audio_stretch=float(self.params.get("max_audio_stretch", services.settings.max_audio_stretch)),
         )
+        overflow_segments = [
+            {
+                "index": index,
+                "path": plan.path,
+                "start": plan.start,
+                "output_duration": plan.output_duration,
+                "source_duration": plan.source_duration,
+                "speed": plan.speed,
+                "dropped_source_duration": plan.dropped_source_duration,
+            }
+            for index, plan in enumerate(plans, start=1)
+            if plan.dropped_source_duration > 0
+        ]
         total_duration = max((plan.end_time for plan in plans), default=MIN_SYNC_DURATION)
         command = [
             services.settings.ffmpeg_path,
             "-y",
             "-f",
             "lavfi",
-            "-i",
-            "anullsrc=r=24000:cl=mono",
             "-t",
             f"{total_duration:.3f}",
+            "-i",
+            "anullsrc=r=24000:cl=mono",
         ]
         for plan in plans:
             command.extend(["-i", plan.path])
@@ -186,15 +198,19 @@ class VoiceSyncModule(BaseModule):
             cancel_check=lambda: services.job_manager.is_cancel_requested(context.job_id),
             grace_seconds=services.settings.cancel_grace_seconds,
         )
+        metadata_patch = {
+            "voice_sync_overflow_segments": overflow_segments,
+            "overflow_unresolved": bool(overflow_segments),
+        }
         return StepResult(
-            context_patch={"synced_audio": str(output_path)},
+            context_patch={"synced_audio": str(output_path), "metadata": metadata_patch},
             artifacts={"synced_audio": str(output_path)},
         )
 
-    def _probe_duration(self, audio_path: str, ffprobe_path: str) -> float:
-        result = subprocess.run(
+    def _probe_duration(self, audio_path: str, context, services) -> float:
+        result = run_subprocess(
             [
-                ffprobe_path,
+                services.settings.ffprobe_path,
                 "-v",
                 "error",
                 "-show_entries",
@@ -203,10 +219,12 @@ class VoiceSyncModule(BaseModule):
                 "default=noprint_wrappers=1:nokey=1",
                 audio_path,
             ],
-            check=True,
-            capture_output=True,
-            text=True,
-            shell=False,
+            job_id=context.job_id,
+            job_manager=services.job_manager,
+            process_registry=services.process_registry,
+            cancel_check=lambda: services.job_manager.is_cancel_requested(context.job_id),
+            grace_seconds=services.settings.cancel_grace_seconds,
+            timeout=30,
         )
         try:
             return float(result.stdout.strip())

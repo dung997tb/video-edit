@@ -1,6 +1,6 @@
 import unittest
 
-from core.models import JobRecord, JobStatus, utcnow
+from core.models import JobError, JobErrorCode, JobRecord, JobStatus, utcnow
 
 
 class JobRecordTests(unittest.TestCase):
@@ -21,3 +21,22 @@ class JobRecordTests(unittest.TestCase):
         self.assertEqual(record.id, "job-1")
         self.assertEqual(record.status, JobStatus.RUNNING)
         self.assertEqual(record.payload["target_language"], "vi")
+
+    def test_error_detail_round_trips(self) -> None:
+        record = JobRecord(
+            id="job-err",
+            source_sha256="source-hash",
+            error="tts failed",
+            error_detail=JobError(
+                code=JobErrorCode.TTS_FAILED.value,
+                message="tts failed",
+                step="tts",
+                retriable=True,
+            ),
+        )
+
+        restored = JobRecord.from_dict(record.to_dict())
+
+        self.assertIsNotNone(restored.error_detail)
+        self.assertEqual(restored.error_detail.code, JobErrorCode.TTS_FAILED.value)
+        self.assertEqual(restored.error_detail.step, "tts")
