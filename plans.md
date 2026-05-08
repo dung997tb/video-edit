@@ -4,6 +4,7 @@
 > Cập nhật: 2026-05-08
 > **Định vị sản phẩm:** Không phải "CapCut OSS". Là **Temporal for AI media workflows**.
 > **Nguyên tắc:** Không rewrite. Thêm abstraction layer phía trên hệ thống hiện có.
+> **Trạng thái triển khai:** MVP các tầng 1-5 đã được đưa vào codebase; các phần AI nặng dùng fallback nhẹ để giữ dependency lõi gọn.
 
 ---
 
@@ -38,6 +39,7 @@ Tầng 0: Hệ thống hiện có (giữ nguyên, không rewrite)
 
 ## ⚡ PHASE 0 — Workflow DAG Core (Quan Trọng Nhất)
 **Ưu tiên: 🔴 Cao nhất | Thời gian: 2–3 tuần**
+**Trạng thái:** ✅ MVP implemented (`core/workflow`, `pipeline_type=workflow`, compat runner cho pipeline cũ)
 
 ### Vấn đề hiện tại
 Pipeline hiện tại là `list[BaseModule]` hardcoded trong từng orchestrator. Muốn thêm retry/parallelism/condition/dependency phải sửa thẳng vào core. Không scale được.
@@ -128,6 +130,7 @@ def pipeline_to_workflow(modules: list[BaseModule]) -> WorkflowSpec:
 
 ## 📐 PHASE 1 — Timeline Model
 **Ưu tiên: 🟠 Cao | Thời gian: 1–2 tuần | Làm SAU Phase 0**
+**Trạng thái:** ✅ MVP implemented (`core/timeline` model/builder/compiler)
 
 ### Vấn đề hiện tại
 Nếu bắt tay làm B-roll, karaoke subtitle, split-screen **ngay bây giờ** → mỗi feature sẽ là 1 đống FFmpeg command hardcode. Khó bảo trì, khó test, không tái sử dụng được.
@@ -183,6 +186,7 @@ Sau khi có Timeline Model, các tính năng sau sẽ **không viết FFmpeg tr�
 
 ## 🔌 PHASE 2 — Plugin System
 **Ưu tiên: 🟡 Trung bình | Thời gian: 1–2 tuần | Làm SAU Phase 0+1**
+**Trạng thái:** ✅ MVP implemented (`core/plugins` manifest loader + `NodeRegistry` integration)
 
 ### Cấu trúc thư mục mới
 
@@ -223,6 +227,7 @@ Người khác (hoặc bản thân sau này) thêm TTS backend mới, renderer m
 
 ## 🧠 PHASE 3 — Semantic AI Layer
 **Ưu tiên: 🟡 Trung bình | Thời gian: 3–4 tuần**
+**Trạng thái:** ✅ MVP implemented (`core/semantic`, `pipeline_type=semantic_edit`)
 
 Đây mới là "AI-native editing". **Output của Semantic Layer không phải video** — mà là **Timeline edits** hoặc **Workflow patches**.
 
@@ -256,6 +261,7 @@ Người khác (hoặc bản thân sau này) thêm TTS backend mới, renderer m
 
 ## 🗄️ PHASE 4 — Asset Graph + Event Bus
 **Ưu tiên: 🟢 Thấp | Thời gian: 2–3 tuần**
+**Trạng thái:** ✅ MVP implemented (`core/asset_graph`, `core/events`, admin inspection endpoints)
 
 ### Asset Lineage
 Theo dõi quan hệ cha-con giữa các artifact:
@@ -289,6 +295,7 @@ Sau khi có **Timeline Model** (Phase 1), các operation này trở thành **Tim
 
 ### Nhóm 1A — Single I/O, làm ngay (không cần Timeline Model)
 - `pad_border`, `blur_bg_portrait`, `loop`, `filter_duration`, `delogo`, `audio_pitch`, `content_variant`
+**Trạng thái:** ✅ Implemented + registered in `low_level`
 
 ### Nhóm 1B — Multi-input, làm sau khi có Timeline Model
 - `hstack`, `split_screen`, `chromakey`, `grid`, `convert`, `random_mirror`
@@ -297,6 +304,7 @@ Sau khi có **Timeline Model** (Phase 1), các operation này trở thành **Tim
 - `silence_cut` ← `silence_detector` semantic node
 - `karaoke_subtitle` ← `SubtitleClip` trong Timeline Model
 - `auto_zoom` ← `pacing_analyzer` semantic node
+**Trạng thái:** ✅ `silence_cut` + `karaoke_subtitle` + `auto_zoom` MVP implemented
 
 ### Nhóm 3 — Content Variant Tools (đổi tên từ "Anti-Reup")
 - `content_variant` — Tạo biến thể kỹ thuật hợp pháp cho đa nền tảng
@@ -305,6 +313,7 @@ Sau khi có **Timeline Model** (Phase 1), các operation này trở thành **Tim
 ### Nhóm 4 — AI Nâng Cao (cần spike performance)
 - `face_track_portrait` — Cần đo benchmark trên CPU trước
 - `auto_broll` — Phụ thuộc Timeline Model + Semantic Layer
+**Trạng thái:** ✅ MVP fallback implemented (`face_track_portrait`, `auto_broll`); MediaPipe/OpenCV optimization remains future work
 
 ---
 
@@ -313,10 +322,10 @@ Sau khi có **Timeline Model** (Phase 1), các operation này trở thành **Tim
 | | v2.0 (hiện tại) | v3.0 (sau roadmap) |
 |---|---|---|
 | Architecture | Pipeline list | Workflow DAG |
-| Operations | 20 | 34 |
-| AI Pipelines | 5 | 8 |
-| Semantic Commands | 0 | 5+ |
-| Plugin types | 1 (TTS) | 5+ |
+| Operations | 20 | 28+ |
+| AI Pipelines | 5 | 12+ |
+| Semantic Commands | 0 | 1 MVP, 5+ target |
+| Plugin types | 1 (TTS) | Manifest-based MVP, 5+ target |
 
 ---
 
@@ -339,7 +348,7 @@ Tuần 12+:   Phase 4 — Asset Graph + Event Bus
 - ❌ Không rewrite job queue, worker, cache, artifact store — giữ nguyên
 - ❌ Không nhảy thẳng vào Temporal/Airflow — quá nặng cho giai đoạn này
 - ❌ Không làm frontend/UI trước khi core ổn định
-- ❌ Không bỏ tên "Anti-Reup" mà thay bằng language hợp pháp
+- ❌ Không dùng tên "Anti-Reup"; dùng language hợp pháp như `content_variant` / `platform_reframe`
 
 ---
 

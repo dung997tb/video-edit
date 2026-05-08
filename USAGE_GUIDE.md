@@ -179,6 +179,34 @@ Mỗi Job cần chọn một `pipeline_type` và cung cấp `payload` tương �
 }
 ```
 
+### `workflow` — Workflow DAG khai báo bằng JSON
+```json
+{
+  "pipeline_type": "workflow",
+  "input_uri": "https://example.com/video.mp4",
+  "payload": {
+    "workflow": {
+      "nodes": {
+        "extract": { "type": "media.extract_audio" },
+        "transcribe": { "type": "ai.transcribe", "depends_on": ["extract"] }
+      }
+    }
+  }
+}
+```
+
+### `semantic_edit` — Biên tập theo intent
+```json
+{
+  "pipeline_type": "semantic_edit",
+  "input_uri": "https://example.com/video.mp4",
+  "payload": {
+    "command": "make_tiktok_short",
+    "target_duration": 60
+  }
+}
+```
+
 ---
 
 ## 6. 🔧 Payload Parameters Toàn Tập
