@@ -1,0 +1,7 @@
+{
+  "pipeline_type": "silence_cut",
+  "payload": {
+    "min_silence_duration": 0.3,
+    "silence_threshold_db": -35
+  }
+}

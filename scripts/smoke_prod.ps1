@@ -21,7 +21,7 @@ catch {
 }
 
 if ([string]::IsNullOrWhiteSpace($BaseUrl)) {
-    $BaseUrl = "http://127.0.0.1:8000"
+    $BaseUrl = "http://127.0.0.1:6666"
 }
 
 $BaseUrl = $BaseUrl.TrimEnd("/")

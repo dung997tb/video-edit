@@ -9,7 +9,7 @@ from modules.video.common import operation_output_path, resolve_working_video, r
 
 
 def _concat_entry(path: str) -> str:
-    escaped = path.replace("\\", "\\\\").replace("'", "'\\''")
+    escaped = str(Path(path).resolve()).replace("\\", "\\\\").replace("'", "'\\''")
     return f"file '{escaped}'"
 
 

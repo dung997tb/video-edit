@@ -1,0 +1,8 @@
+{
+  "pipeline_type": "semantic_edit",
+  "payload": {
+    "command": "silence_cut",
+    "min_silence_duration": 0.3,
+    "silence_threshold_db": -35
+  }
+}

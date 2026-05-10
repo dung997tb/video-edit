@@ -6,7 +6,9 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from core.artifact_store import LocalArtifactStore
+from core.asset_graph import InMemoryAssetGraph
 from core.cache import CacheManager
+from core.events import InMemoryEventBus
 from core.job_manager import InMemoryJobRepository, JobManager
 from core.process import ProcessRegistry
 
@@ -72,6 +74,8 @@ def make_services(root: Path):
         cache_manager=CacheManager(artifact_store=artifact_store, cache_version=settings.cache_version),
         job_manager=JobManager(InMemoryJobRepository()),
         process_registry=ProcessRegistry(),
+        asset_graph=InMemoryAssetGraph(),
+        event_bus=InMemoryEventBus(),
         pipeline_builders={},
     )
 

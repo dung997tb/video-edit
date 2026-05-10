@@ -12,6 +12,8 @@ class AudioFadeModule(BaseModule):
 
     def cache_inputs(self, context) -> dict:
         return {
+            "fade_type": self.params.get("type", self.params.get("fade_type")),
+            "duration": self.params.get("duration"),
             "fade_in_duration": self.params.get("fade_in_duration", 0.0),
             "fade_out_start": self.params.get("fade_out_start", 0.0),
             "fade_out_duration": self.params.get("fade_out_duration", 0.0),
@@ -25,9 +27,11 @@ class AudioFadeModule(BaseModule):
         if not input_audio:
             raise ValueError("audio_fade requires a source audio in context")
         output_path = operation_output_path(context, self.params, self.NAME)
-        fade_in_duration = float(self.params.get("fade_in_duration", 0.0))
+        fade_type = str(self.params.get("type", self.params.get("fade_type", ""))).lower()
+        duration = self.params.get("duration")
+        fade_in_duration = float(self.params.get("fade_in_duration", duration if fade_type == "in" else 0.0))
         fade_out_start = float(self.params.get("fade_out_start", 0.0))
-        fade_out_duration = float(self.params.get("fade_out_duration", 0.0))
+        fade_out_duration = float(self.params.get("fade_out_duration", duration if fade_type == "out" else 0.0))
 
         filters: list[str] = []
         if fade_in_duration > 0:

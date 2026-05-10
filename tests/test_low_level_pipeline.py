@@ -38,3 +38,26 @@ class LowLevelPipelineTests(unittest.TestCase):
 
         with self.assertRaises(ValueError):
             build_low_level_pipeline(job, services)
+
+    def test_build_low_level_pipeline_accepts_structured_type_and_params(self) -> None:
+        services = make_services(make_test_root("low-level-pipeline-structured"))
+        job = JobRecord(
+            id="job-low-level-structured",
+            pipeline_type="low_level",
+            source_sha256="source-hash",
+            payload={
+                "operations": [
+                    {
+                        "id": "crop-main",
+                        "type": "crop",
+                        "params": {"width": 320, "height": 240},
+                    }
+                ]
+            },
+        )
+
+        steps = build_low_level_pipeline(job, services)
+
+        self.assertEqual(steps[0].NAME, "crop")
+        self.assertEqual(steps[0].params["width"], 320)
+        self.assertEqual(steps[0].params["operation_id"], "crop-main")

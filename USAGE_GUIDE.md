@@ -113,7 +113,7 @@ python main.py api &
 python main.py worker
 ```
 
-Server sẽ lắng nghe tại `http://0.0.0.0:8000`. Truy cập `http://localhost:8000/docs` để xem Swagger UI.
+Server sẽ lắng nghe tại `http://0.0.0.0:6666`. Truy cập `http://localhost:6666/docs` để xem Swagger UI.
 
 ### Xác thực (Authentication):
 Mọi request cần header:
@@ -233,15 +233,15 @@ Các key phổ biến có thể thêm vào trường `payload` của bất kỳ 
 
 ```bash
 # Xem metrics Prometheus
-curl http://localhost:8000/metrics
+curl http://localhost:6666/metrics
 
 # Xem trạng thái job realtime qua SSE
-curl -N http://localhost:8000/jobs/{job_id}/stream \
+curl -N http://localhost:6666/jobs/{job_id}/stream \
   -H "X-API-Key: your-key"
 ```
 
 ### Tích hợp Grafana:
-Trỏ Prometheus scrape tới `http://<server>:8000/metrics`, sau đó import dashboard Grafana để theo dõi `active_jobs`, `job_submitted_total`, và `job_completed_total`.
+Trỏ Prometheus scrape tới `http://<server>:6666/metrics`, sau đó import dashboard Grafana để theo dõi `active_jobs`, `job_submitted_total`, và `job_completed_total`.
 
 ---
 

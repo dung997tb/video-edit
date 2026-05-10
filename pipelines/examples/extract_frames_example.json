@@ -1,0 +1,6 @@
+{
+  "pipeline_type": "extract_frames",
+  "payload": {
+    "interval_seconds": 5
+  }
+}

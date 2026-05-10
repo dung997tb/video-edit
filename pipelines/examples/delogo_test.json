@@ -1,0 +1,15 @@
+{
+  "pipeline_type": "low_level",
+  "payload": {
+    "operations": [
+      {
+        "name": "delogo",
+        "x": 0,
+        "y": 0,
+        "w": 200,
+        "h": 80,
+        "mode": "blur"
+      }
+    ]
+  }
+}

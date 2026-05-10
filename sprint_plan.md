@@ -396,7 +396,7 @@ foreach ($test in $testCases) {
 python main.py api
 
 # Test từng pipeline qua HTTP:
-curl -X POST http://localhost:8000/jobs `
+curl -X POST http://localhost:6666/jobs `
   -H "X-API-Key: test-key" `
   -H "Content-Type: application/json" `
   -d '{"input_uri":"file:///path/to/test_input.mp4","pipeline_type":"silence_cut","payload":{"min_silence_duration":0.5}}'

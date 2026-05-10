@@ -1,16 +1,69 @@
+# ── Python ──────────────────────────────────────────────────────────
 __pycache__/
-*.pyc
+*.py[cod]
+*.pyo
+*.pyd
+*.egg-info/
+dist/
+build/
+.eggs/
+*.egg
+.mypy_cache/
+.ruff_cache/
+
+# ── Environment & Secrets ────────────────────────────────────────────
 .env
+.env.local
+.env.*.local
+
+# ── Test / CI ────────────────────────────────────────────────────────
 .pytest_cache/
-.agent/
-.vscode/
-.gh/
-logs/
+test_runs/
 *.log
-debug.log
+*.log.*
+pytest-cache-files-*/
+htmlcov/
+.coverage
+coverage.xml
+
+# ── Runtime artifacts (video engine) ────────────────────────────────
 output/
 temp/
 cache/
-test_runs/
+logs/
+logs_probe_tmp/
+
+# ── Test media ───────────────────────────────────────────────────────
+test_input.mp4
+test.mp4
+*.mp4.tmp
+*.ts.tmp
+
+# ── n8n node package build ───────────────────────────────────────────
+n8n-nodes-ai-video-engine/node_modules/
+n8n-nodes-ai-video-engine/dist/
+n8n-nodes-ai-video-engine/*.tgz
+
+# ── Editor / OS ─────────────────────────────────────────────────────
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ── Antigravity / agent internals ───────────────────────────────────
+.agent/
+.gh/
+
+# ── Supabase local ───────────────────────────────────────────────────
+supabase/.branches/
+supabase/.temp/
+
+# ── Misc ──────────────────────────────────────────────────────────────
 tmp*/
 tools/
+benchmarks/
+realworld_test_*.log
+realworld_test_*.json
+realworld_test_*.results.json
+GEMINI.new.md

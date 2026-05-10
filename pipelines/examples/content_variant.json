@@ -1,0 +1,15 @@
+{
+  "pipeline_type": "low_level",
+  "payload": {
+    "operations": [
+      {
+        "name": "content_variant",
+        "speed_factor": 1.01,
+        "grain": 3,
+        "hue_shift": 2.0,
+        "sat_factor": 1.02,
+        "audio_shift_cents": 0
+      }
+    ]
+  }
+}

@@ -22,6 +22,7 @@ class JobResponse(BaseModel):
     status: str
     pipeline_type: str
     priority: int = 0
+    payload: dict[str, Any] = Field(default_factory=dict)
     input_path: str | None = None
     input_uri: str | None = None
     output_path: str | None = None
@@ -35,9 +36,14 @@ class JobResponse(BaseModel):
     step_index: int
     total_steps: int
     current_step: str | None = None
+    log: str | None = None
     error: str | None = None
     error_detail: dict[str, Any] | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
+    created_at: datetime
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
+    updated_at: datetime
 
 
 class CancelJobResponse(BaseModel):

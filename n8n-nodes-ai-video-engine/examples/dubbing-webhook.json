@@ -1,0 +1,50 @@
+{
+  "name": "AI Video Engine - Dubbing Webhook",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "ai-video-engine-callback",
+        "events": [
+          "job.completed",
+          "job.failed",
+          "job.cancelled"
+        ]
+      },
+      "id": "video-callback",
+      "name": "AI Video Engine Trigger",
+      "type": "n8n-nodes-ai-video-engine.aiVideoEngineTrigger",
+      "typeVersion": 1,
+      "position": [480, 300]
+    },
+    {
+      "parameters": {
+        "resource": "preset",
+        "presetOperation": "dubbing",
+        "sourceMode": "inputUri",
+        "inputUri": "={{$json.video_url}}",
+        "sourceLanguage": "en",
+        "targetLanguage": "vi",
+        "translatorService": "google",
+        "ttsVoice": "vi-VN-HoaiMyNeural",
+        "ttsRate": "-5%",
+        "webhookUrl": "https://YOUR_N8N_HOST/webhook/ai-video-engine-callback",
+        "outputMode": "job"
+      },
+      "id": "create-dubbing",
+      "name": "Create Dubbing Job",
+      "type": "n8n-nodes-ai-video-engine.aiVideoEngine",
+      "typeVersion": 1,
+      "position": [480, 540],
+      "credentials": {
+        "aiVideoEngineApi": {
+          "id": "REPLACE_WITH_CREDENTIAL_ID",
+          "name": "AI Video Engine API"
+        }
+      }
+    }
+  ],
+  "connections": {},
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

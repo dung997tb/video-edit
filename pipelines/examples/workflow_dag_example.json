@@ -1,0 +1,20 @@
+{
+  "pipeline_type": "workflow",
+  "payload": {
+    "workflow": {
+      "nodes": {
+        "border": {
+          "type": "video.pad_border",
+          "params": {
+            "size": 12,
+            "color": "white"
+          }
+        },
+        "export": {
+          "type": "media.finalize",
+          "depends_on": ["border"]
+        }
+      }
+    }
+  }
+}

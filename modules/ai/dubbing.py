@@ -76,6 +76,8 @@ def build_dubbing_pipeline(job, services):
             AudioMixerModule(
                 params={
                     "background_weight": payload.get("background_music_volume", payload.get("background_weight", 0.15)),
+                    "original_volume": payload.get("original_volume", payload.get("source_volume")),
+                    "translated_volume": payload.get("translated_volume", payload.get("tts_volume_linear", 1.0)),
                     "duck_during_speech": payload.get("duck_during_speech", False),
                     "duck_level_db": payload.get("duck_level_db", -12),
                 }

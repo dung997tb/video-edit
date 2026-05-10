@@ -10,24 +10,25 @@ def build_audio_filter_complex(
     track_count: int,
     background_weight: float = 0.15,
     *,
+    speech_weight: float = 1.0,
     duck_during_speech: bool = False,
     duck_level_db: float = -12.0,
 ) -> str:
     if track_count <= 0:
         raise ValueError("track_count must be positive")
     if track_count == 1:
-        return "[0:a]loudnorm=I=-16:TP=-1.5:LRA=11[out]"
+        return f"[0:a]volume={speech_weight:.4f},loudnorm=I=-16:TP=-1.5:LRA=11[out]"
     if track_count != 2:
         raise ValueError("audio mixer currently supports one or two tracks")
     if duck_during_speech:
         duck_volume = 10 ** (float(duck_level_db) / 20)
         return (
-            "[0:a]loudnorm=I=-16:TP=-1.5:LRA=11[speech];"
+            f"[0:a]volume={speech_weight:.4f},loudnorm=I=-16:TP=-1.5:LRA=11[speech];"
             f"[1:a]loudnorm=I=-16:TP=-1.5:LRA=11,volume={duck_volume:.4f}[bg];"
             "[speech][bg]amix=inputs=2:duration=longest:weights='1 1'[out]"
         )
     return (
-        "[0:a]loudnorm=I=-16:TP=-1.5:LRA=11[a0];"
+        f"[0:a]volume={speech_weight:.4f},loudnorm=I=-16:TP=-1.5:LRA=11[a0];"
         "[1:a]loudnorm=I=-16:TP=-1.5:LRA=11[a1];"
         f"[a0][a1]amix=inputs=2:duration=longest:weights='1 {background_weight}'[out]"
     )
@@ -40,6 +41,7 @@ class AudioMixerModule(BaseModule):
     def cache_inputs(self, context) -> dict:
         return {
             "background_weight": self.params.get("background_weight", 0.15),
+            "speech_weight": self.params.get("speech_weight", self.params.get("translated_volume", 1.0)),
             "background_audio": _background_audio(context),
             "duck_during_speech": self.params.get("duck_during_speech", context.state.get("duck_during_speech", False)),
             "duck_level_db": self.params.get("duck_level_db", context.state.get("duck_level_db", -12)),
@@ -71,11 +73,19 @@ class AudioMixerModule(BaseModule):
                 "-filter_complex",
                 build_audio_filter_complex(
                     track_count=track_count,
-                    background_weight=float(
-                        self.params.get(
-                            "background_weight",
-                            context.state.get("background_music_volume", context.state.get("background_weight", 0.15)),
-                        )
+                    speech_weight=_first_float(
+                        1.0,
+                        self.params.get("speech_weight"),
+                        self.params.get("translated_volume"),
+                        context.state.get("translated_volume"),
+                    ),
+                    background_weight=_first_float(
+                        0.15,
+                        self.params.get("original_volume"),
+                        self.params.get("background_weight"),
+                        context.state.get("original_volume"),
+                        context.state.get("background_music_volume"),
+                        context.state.get("background_weight"),
                     ),
                     duck_during_speech=bool(
                         self.params.get("duck_during_speech", context.state.get("duck_during_speech", False))
@@ -107,3 +117,10 @@ def _background_audio(context) -> str | None:
         or context.state.get("background_music")
         or context.state.get("background_music_url")
     )
+
+
+def _first_float(default: float, *values) -> float:
+    for value in values:
+        if value is not None:
+            return float(value)
+    return default

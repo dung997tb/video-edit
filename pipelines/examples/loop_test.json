@@ -1,0 +1,11 @@
+{
+  "pipeline_type": "low_level",
+  "payload": {
+    "operations": [
+      {
+        "name": "loop",
+        "times": 2
+      }
+    ]
+  }
+}

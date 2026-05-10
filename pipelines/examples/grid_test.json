@@ -1,0 +1,19 @@
+{
+  "pipeline_type": "low_level",
+  "payload": {
+    "operations": [
+      {
+        "name": "grid",
+        "videos": [
+          "test_input.mp4",
+          "test_input.mp4",
+          "test_input.mp4"
+        ],
+        "cols": 2,
+        "rows": 2,
+        "output_width": 1080,
+        "output_height": 1920
+      }
+    ]
+  }
+}

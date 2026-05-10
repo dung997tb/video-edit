@@ -1,0 +1,28 @@
+{
+  "pipeline_type": "low_level",
+  "payload": {
+    "operations": [
+      {
+        "name": "pad_border",
+        "size": 20,
+        "color": "white"
+      },
+      {
+        "name": "blur_bg_portrait",
+        "output_width": 1080,
+        "output_height": 1920
+      },
+      {
+        "name": "audio_pitch",
+        "semitones": 3,
+        "preserve_tempo": true
+      },
+      {
+        "name": "content_variant",
+        "grain": 3,
+        "hue_shift": 2.0,
+        "sat_factor": 1.02
+      }
+    ]
+  }
+}

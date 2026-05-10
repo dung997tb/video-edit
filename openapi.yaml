@@ -1,0 +1,687 @@
+openapi: 3.1.0
+info:
+  title: AI Video Engine API
+  version: "2.0"
+  description: API for creating, monitoring, cancelling, and administering AI video processing jobs.
+servers:
+  - url: http://localhost:6666
+    description: Local development
+  - url: https://{domain}
+    description: Production with custom domain
+    variables:
+      domain:
+        default: your-server.com
+security:
+  - ApiKeyHeader: []
+  - BearerAuth: []
+tags:
+  - name: health
+  - name: jobs
+  - name: admin
+  - name: metrics
+paths:
+  /health:
+    get:
+      tags: [health]
+      operationId: getHealth
+      summary: Health check
+      security: []
+      responses:
+        "200":
+          description: API is healthy.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status:
+                    type: string
+                    const: ok
+  /metrics:
+    get:
+      tags: [metrics]
+      operationId: getMetrics
+      summary: Prometheus metrics
+      security: []
+      responses:
+        "200":
+          description: Prometheus text format metrics.
+          content:
+            text/plain:
+              schema:
+                type: string
+  /jobs:
+    post:
+      tags: [jobs]
+      operationId: createJob
+      summary: Create a job
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateJobRequest"
+            examples:
+              lowLevelCut:
+                value:
+                  pipeline_type: low_level
+                  input_uri: https://example.com/video.mp4
+                  payload:
+                    operations:
+                      - id: cut-main
+                        type: cut
+                        params:
+                          start: 0
+                          duration: 3
+      responses:
+        "200":
+          description: Job created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JobResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+    get:
+      tags: [jobs]
+      operationId: listJobs
+      summary: List jobs
+      parameters:
+        - $ref: "#/components/parameters/StatusQuery"
+        - $ref: "#/components/parameters/LimitQuery"
+      responses:
+        "200":
+          description: Job list.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JobListResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /jobs/upload:
+    post:
+      tags: [jobs]
+      operationId: uploadJob
+      summary: Upload a file and create a job
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                pipeline_type:
+                  type: string
+                  default: dubbing
+                payload_json:
+                  type: string
+                  default: "{}"
+                metadata_json:
+                  type: string
+                  default: "{}"
+      responses:
+        "200":
+          description: Job created from upload.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JobResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+  /jobs/{job_id}:
+    get:
+      tags: [jobs]
+      operationId: getJob
+      summary: Get a job
+      parameters:
+        - $ref: "#/components/parameters/JobId"
+      responses:
+        "200":
+          description: Job details.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JobResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /jobs/{job_id}/stream:
+    get:
+      tags: [jobs]
+      operationId: streamJob
+      summary: Stream job progress with Server-Sent Events
+      parameters:
+        - $ref: "#/components/parameters/JobId"
+      responses:
+        "200":
+          description: SSE stream. Each data frame contains job progress JSON.
+          content:
+            text/event-stream:
+              schema:
+                type: string
+              examples:
+                progress:
+                  value: "data: {\"id\":\"job-id\",\"progress\":50,\"status\":\"running\"}\n\n"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /jobs/{job_id}/cancel:
+    post:
+      tags: [jobs]
+      operationId: cancelJob
+      summary: Request job cancellation
+      parameters:
+        - $ref: "#/components/parameters/JobId"
+      responses:
+        "200":
+          description: Cancellation requested.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CancelJobResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /admin:
+    get:
+      tags: [admin]
+      operationId: getAdminDashboard
+      summary: HTML admin dashboard
+      responses:
+        "200":
+          description: Admin dashboard HTML.
+          content:
+            text/html:
+              schema:
+                type: string
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /admin/jobs:
+    get:
+      tags: [admin]
+      operationId: adminListJobs
+      summary: Admin job list
+      parameters:
+        - $ref: "#/components/parameters/StatusQuery"
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+            default: 100
+      responses:
+        "200":
+          description: Admin job list.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JobListResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /admin/jobs/{job_id}/assets:
+    get:
+      tags: [admin]
+      operationId: adminJobAssets
+      summary: List assets for one job
+      parameters:
+        - $ref: "#/components/parameters/JobId"
+      responses:
+        "200":
+          description: Asset records.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/AssetRecord"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /admin/events:
+    get:
+      tags: [admin]
+      operationId: adminEvents
+      summary: List recent events
+      parameters:
+        - name: event_type
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+            default: 100
+      responses:
+        "200":
+          description: Event records.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/EventRecord"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /admin/jobs/{job_id}/cleanup:
+    delete:
+      tags: [admin]
+      operationId: adminCleanupJob
+      summary: Delete temp and output folders for a job
+      parameters:
+        - $ref: "#/components/parameters/JobId"
+      responses:
+        "200":
+          description: Cleanup result.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [job_id, status, deleted_temp, deleted_output]
+                properties:
+                  job_id:
+                    type: string
+                  status:
+                    type: string
+                    example: success
+                  deleted_temp:
+                    type: boolean
+                  deleted_output:
+                    type: boolean
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+components:
+  securitySchemes:
+    ApiKeyHeader:
+      type: apiKey
+      in: header
+      name: X-API-Key
+    BearerAuth:
+      type: http
+      scheme: bearer
+  parameters:
+    JobId:
+      name: job_id
+      in: path
+      required: true
+      schema:
+        type: string
+      description: Job ID.
+    StatusQuery:
+      name: status
+      in: query
+      required: false
+      schema:
+        $ref: "#/components/schemas/JobStatus"
+    LimitQuery:
+      name: limit
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 200
+        default: 50
+  responses:
+    BadRequest:
+      description: Invalid request.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    Unauthorized:
+      description: Missing or invalid API key.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    NotFound:
+      description: Resource not found.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    PayloadTooLarge:
+      description: Uploaded file exceeds configured limit.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    RateLimited:
+      description: Rate limit exceeded.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+  schemas:
+    JobStatus:
+      type: string
+      enum: [pending, running, done, failed, cancelled]
+    CreateJobRequest:
+      type: object
+      properties:
+        pipeline_type:
+          type: string
+          default: dubbing
+        source_sha256:
+          type: [string, "null"]
+          description: Direct source SHA-256, only accepted when explicitly enabled.
+        input_path:
+          type: [string, "null"]
+          description: Local input path, only accepted when explicitly enabled.
+        input_uri:
+          type: [string, "null"]
+          description: Remote source URI.
+        source_key:
+          type: [string, "null"]
+          description: Artifact store key for an already uploaded source.
+        payload:
+          type: object
+          additionalProperties: true
+          default: {}
+        metadata:
+          type: object
+          additionalProperties: true
+          default: {}
+        priority:
+          type: [integer, "null"]
+          minimum: 0
+          maximum: 10
+      additionalProperties: false
+    JobResponse:
+      type: object
+      required:
+        - id
+        - status
+        - pipeline_type
+        - priority
+        - payload
+        - source_sha256
+        - cancel_requested
+        - attempt_count
+        - progress
+        - step_index
+        - total_steps
+        - metadata
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: string
+        status:
+          $ref: "#/components/schemas/JobStatus"
+        pipeline_type:
+          type: string
+        priority:
+          type: integer
+        payload:
+          type: object
+          additionalProperties: true
+        input_path:
+          type: [string, "null"]
+        input_uri:
+          type: [string, "null"]
+        output_path:
+          type: [string, "null"]
+        source_sha256:
+          type: string
+        pid:
+          type: [integer, "null"]
+        worker_id:
+          type: [string, "null"]
+        lease_expires_at:
+          type: [string, "null"]
+          format: date-time
+        cancel_requested:
+          type: boolean
+        attempt_count:
+          type: integer
+        progress:
+          type: integer
+          minimum: 0
+          maximum: 100
+        step_index:
+          type: integer
+        total_steps:
+          type: integer
+        current_step:
+          type: [string, "null"]
+        log:
+          type: [string, "null"]
+        error:
+          type: [string, "null"]
+        error_detail:
+          anyOf:
+            - $ref: "#/components/schemas/JobError"
+            - type: "null"
+        metadata:
+          type: object
+          additionalProperties: true
+        created_at:
+          type: string
+          format: date-time
+        started_at:
+          type: [string, "null"]
+          format: date-time
+        finished_at:
+          type: [string, "null"]
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    JobListResponse:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/JobResponse"
+    CancelJobResponse:
+      type: object
+      required: [id, cancel_requested, status]
+      properties:
+        id:
+          type: string
+        cancel_requested:
+          type: boolean
+        status:
+          $ref: "#/components/schemas/JobStatus"
+    JobError:
+      type: object
+      required: [code, message, retriable]
+      properties:
+        code:
+          type: string
+          example: FFMPEG_FAILED
+        message:
+          type: string
+        step:
+          type: [string, "null"]
+        retriable:
+          type: boolean
+          default: false
+    ResultItem:
+      type: object
+      required: [id, operation_id, kind, label, path, media_type]
+      properties:
+        id:
+          type: string
+        operation_id:
+          type: string
+        kind:
+          type: string
+        label:
+          type: string
+        path:
+          type: string
+        media_type:
+          type: string
+          enum: [video, audio, image, text, directory, file]
+        artifact_scope:
+          type: [string, "null"]
+        relative_path:
+          type: [string, "null"]
+        duration:
+          type: [number, "null"]
+        width:
+          type: [integer, "null"]
+        height:
+          type: [integer, "null"]
+        language:
+          type: [string, "null"]
+        role:
+          type: [string, "null"]
+        metadata:
+          type: object
+          additionalProperties: true
+    WebhookPayload:
+      type: object
+      required: [event, job_id, status, output_path, metadata, error, error_detail]
+      properties:
+        event:
+          type: string
+          enum: [job.completed, job.failed, job.cancelled]
+        job_id:
+          type: string
+        status:
+          $ref: "#/components/schemas/JobStatus"
+        output_path:
+          type: [string, "null"]
+        metadata:
+          type: object
+          additionalProperties: true
+          properties:
+            result_items:
+              type: array
+              items:
+                $ref: "#/components/schemas/ResultItem"
+        error:
+          type: [string, "null"]
+        error_detail:
+          anyOf:
+            - $ref: "#/components/schemas/JobError"
+            - type: "null"
+    ProviderConfig:
+      type: object
+      properties:
+        provider:
+          type: string
+        api_key:
+          type: string
+          description: Secret value in requests; redacted in stored job payload.
+        api_key_source:
+          type: string
+          example: request
+        api_key_hint:
+          type: string
+          example: "***1234"
+        model:
+          type: string
+      additionalProperties: true
+    Operation:
+      type: object
+      properties:
+        id:
+          type: string
+        operation_id:
+          type: string
+          readOnly: true
+        type:
+          type: string
+        name:
+          type: string
+          readOnly: true
+        params:
+          type: object
+          additionalProperties: true
+        time_range:
+          $ref: "#/components/schemas/TimeRange"
+      additionalProperties: true
+    TimeRange:
+      type: object
+      properties:
+        start:
+          type: number
+          minimum: 0
+        end:
+          type: number
+          minimum: 0
+        duration:
+          type: number
+          exclusiveMinimum: 0
+    AssetRecord:
+      type: object
+      required: [asset_id, job_id, node_id, uri, kind, parents, metadata]
+      properties:
+        asset_id:
+          type: string
+        job_id:
+          type: string
+        node_id:
+          type: string
+        uri:
+          type: string
+        kind:
+          type: string
+        parents:
+          type: array
+          items:
+            type: string
+        metadata:
+          type: object
+          additionalProperties: true
+    EventRecord:
+      type: object
+      required: [type, payload, created_at]
+      properties:
+        type:
+          type: string
+        payload:
+          type: object
+          additionalProperties: true
+        created_at:
+          type: string
+          format: date-time
+    ErrorResponse:
+      type: object
+      required: [detail]
+      properties:
+        detail:
+          oneOf:
+            - type: string
+            - type: array
+              items:
+                type: object
+                additionalProperties: true

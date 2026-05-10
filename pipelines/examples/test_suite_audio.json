@@ -1,0 +1,20 @@
+{
+  "pipeline_type": "low_level",
+  "payload": {
+    "operations": [
+      {
+        "name": "audio_pitch",
+        "semitones": 2,
+        "preserve_tempo": true
+      },
+      {
+        "name": "audio_normalize"
+      },
+      {
+        "name": "audio_fade",
+        "type": "in",
+        "duration": 0.5
+      }
+    ]
+  }
+}

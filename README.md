@@ -33,6 +33,11 @@ Hệ thống có sẵn các "dây chuyền" sản xuất video độc lập:
 - **`audio_extract`:** Trích xuất và cân bằng âm lượng (Loudness Normalization) chuyên dùng cho Podcast.
 - **`ad_video`:** Dựng video/âm thanh quảng cáo trực tiếp từ ảnh tĩnh + kịch bản text.
 - **`low_level`:** Các thao tác video cơ bản (Cắt, ghép, tăng tốc, filter màu, làm mờ, v.v.).
+- **`workflow`:** Chạy workflow DAG khai báo bằng JSON trong `payload.workflow`.
+- **`semantic_edit`:** Biên tập theo intent, tạo timeline metadata và render bản cắt MVP.
+- **`silence_cut`:** Auto jump-cut dựa trên transcript để bỏ khoảng không lời.
+- **`face_track_portrait`:** Reframe portrait với center-crop fallback, sẵn chỗ cho plugin face tracking.
+- **`auto_broll`:** Chèn B-roll theo keyword map ở mức MVP.
 
 ---
 
@@ -60,6 +65,8 @@ Hệ thống có sẵn các "dây chuyền" sản xuất video độc lập:
 - **Resumable Cache:** Tự động lưu bộ nhớ đệm (Cache). Job lỗi chạy lại sẽ nhảy qua các bước đã làm, không tốn tiền gọi API hai lần.
 - Endpoint giám sát Realtime (SSE) để kết nối trực tiếp với Frontend/Mobile App.
 - API Rate Limiting & Auth Header an toàn cho môi trường Server công cộng.
+- **Workflow DAG Core:** `core/workflow` cung cấp `WorkflowSpec`, `DAGRunner`, `NodeRegistry` và compat layer cho pipeline cũ.
+- **Timeline / Semantic / Plugin Foundations:** `core/timeline`, `core/semantic`, `core/plugins`, `core/asset_graph`, `core/events`.
 
 ---
 
@@ -103,6 +110,40 @@ SUPABASE_KEY=<your-service-role-key>
 - Các Endpoint được bảo vệ bằng `X-API-Key`.
 - Giao thức nhận dạng đầu vào giới hạn khắt khe qua `API_ALLOWED_INPUT_URI_SCHEMES` (tránh SSRF).
 - Tích hợp Rate Limiting và chặn truy cập file hệ thống (`API_ALLOW_INPUT_PATH=false`).
+
+---
+
+## Testing
+
+Run the unit and integration-style test suite:
+
+```bash
+python -m pytest tests/ -v
+```
+
+Validate the published OpenAPI contract:
+
+```bash
+python -c "import openapi_spec_validator, yaml, pathlib; openapi_spec_validator.validate(yaml.safe_load(pathlib.Path('openapi.yaml').read_text(encoding='utf-8'))); print('openapi ok')"
+```
+
+Run live smoke checks against a running VPS/API instance:
+
+```bash
+python scripts/test_api_live.py --base-url http://localhost:6666 --api-key your-secret-key
+python scripts/test_webhook_live.py --base-url http://localhost:6666 --api-key your-secret-key --webhook-port 9999
+```
+
+---
+
+## AI Module Limitations (MVP)
+
+| Module | Status | Limitation |
+|---|---|---|
+| Face Tracker | MVP | Uses crop heuristics unless a stronger tracker is plugged in. |
+| Silence Remover | MVP | Uses FFmpeg silence detection, not neural VAD. |
+| Karaoke Subtitle | Beta | Word-level timing can drift on noisy inputs. |
+| Semantic Edit | Alpha | Rule-based timeline decisions, not full AI inference. |
 
 ---
 

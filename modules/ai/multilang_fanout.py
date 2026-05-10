@@ -5,6 +5,13 @@ from modules.base import BaseModule
 from modules.registry import register
 
 
+DEFAULT_TTS_VOICE_BY_LANGUAGE = {
+    "vi": "vi-VN-HoaiMyNeural",
+    "ja": "ja-JP-NanamiNeural",
+    "ko": "ko-KR-SunHiNeural",
+}
+
+
 @register
 class MultilangFanOutModule(BaseModule):
     NAME = "multilang_fanout"
@@ -23,6 +30,12 @@ class MultilangFanOutModule(BaseModule):
             child_payload.pop("target_languages", None)
             child_payload["target_language"] = language
             child_payload["parent_job_id"] = context.job_id
+            if child_payload.get("output_name"):
+                child_payload["output_name"] = f"{child_payload['output_name']}_{language}"
+            if not child_payload.get("tts_voice"):
+                default_voice = DEFAULT_TTS_VOICE_BY_LANGUAGE.get(str(language).lower())
+                if default_voice:
+                    child_payload["tts_voice"] = default_voice
             child_metadata = dict(context.metadata)
             child_metadata["parent_job_id"] = context.job_id
             kwargs = {}

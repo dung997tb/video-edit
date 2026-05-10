@@ -24,8 +24,8 @@ class ScaleVideoModule(BaseModule):
 
     def cache_inputs(self, context) -> dict:
         return {
-            "width": self.params.get("width"),
-            "height": self.params.get("height"),
+            "width": self.params.get("width", self.params.get("w")),
+            "height": self.params.get("height", self.params.get("h")),
             "keep_aspect": self.params.get("keep_aspect", True),
         }
 
@@ -35,8 +35,8 @@ class ScaleVideoModule(BaseModule):
     def execute(self, context, services) -> StepResult:
         input_video = resolve_working_video(context)
         output_path = operation_output_path(context, self.params, self.NAME)
-        width = self.params.get("width")
-        height = self.params.get("height")
+        width = self.params.get("width", self.params.get("w"))
+        height = self.params.get("height", self.params.get("h"))
         keep_aspect = bool(self.params.get("keep_aspect", True))
         vf = _build_scale_filter(
             width=int(width) if width is not None else None,

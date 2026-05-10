@@ -1,0 +1,40 @@
+{
+  "pipeline_type": "low_level",
+  "payload": {
+    "operations": [
+      {
+        "name": "cut",
+        "start": 0,
+        "end": 20
+      },
+      {
+        "name": "speed",
+        "factor": 1.2
+      },
+      {
+        "name": "scale",
+        "w": 1080,
+        "h": 1920
+      },
+      {
+        "name": "pad_border",
+        "size": 20,
+        "color": "white"
+      },
+      {
+        "name": "audio_volume",
+        "volume": 0.8
+      },
+      {
+        "name": "color_grade",
+        "brightness": 0.1,
+        "contrast": 1.1,
+        "saturation": 1.2
+      },
+      {
+        "name": "visual_blur",
+        "sigma": 1.5
+      }
+    ]
+  }
+}

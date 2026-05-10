@@ -1,10 +1,10 @@
 from __future__ import annotations
 
+from core.ffmpeg_filters import atempo_chain
 from core.models import StepResult
 from modules.audio.common import operation_output_path, resolve_working_audio, run_ffmpeg, working_audio_result
 from modules.base import BaseModule
 from modules.registry import register
-from modules.video.common import atempo_chain
 
 
 @register

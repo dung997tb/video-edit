@@ -14,6 +14,9 @@ class ExtractAudioModule(BaseModule):
         return {
             "sample_rate": self.params.get("sample_rate", 16000),
             "channels": self.params.get("channels", 1),
+            "start": self.params.get("start"),
+            "end": self.params.get("end"),
+            "duration": self.params.get("duration"),
         }
 
     def upstream_artifact_hashes(self, context) -> dict:
@@ -26,15 +29,30 @@ class ExtractAudioModule(BaseModule):
             "-y",
             "-i",
             context.input_video,
-            "-vn",
-            "-acodec",
-            "pcm_s16le",
-            "-ar",
-            str(self.params.get("sample_rate", 16000)),
-            "-ac",
-            str(self.params.get("channels", 1)),
-            str(output_path),
         ]
+        start = self.params.get("start")
+        end = self.params.get("end")
+        duration = self.params.get("duration")
+        if start is not None:
+            command.extend(["-ss", f"{float(start):.3f}"])
+        if end is not None and start is not None:
+            command.extend(["-t", f"{max(float(end) - float(start), 0.001):.3f}"])
+        elif end is not None:
+            command.extend(["-to", f"{float(end):.3f}"])
+        elif duration is not None:
+            command.extend(["-t", f"{float(duration):.3f}"])
+        command.extend(
+            [
+                "-vn",
+                "-acodec",
+                "pcm_s16le",
+                "-ar",
+                str(self.params.get("sample_rate", 16000)),
+                "-ac",
+                str(self.params.get("channels", 1)),
+                str(output_path),
+            ]
+        )
         run_subprocess(
             command,
             job_id=context.job_id,

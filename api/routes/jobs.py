@@ -12,8 +12,10 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import StreamingResponse
 
 from api.schemas import CancelJobResponse, CreateJobRequest, JobListResponse, JobResponse
+from core.key_redactor import split_redacted_secrets
 from core.metrics import metrics
 from core.models import JobStatus
+from core.payload_parser import parse_job_payload
 from core.runtime import get_services
 from core.source_identity import resolve_source_sha256
 
@@ -40,6 +42,31 @@ def _validate_input_uri(input_uri: str | None, services) -> None:
         raise HTTPException(status_code=400, detail=f"input_uri scheme is not allowed: {parsed.scheme}")
 
 
+def _prepare_payload_and_metadata(
+    payload: dict,
+    metadata: dict,
+    *,
+    source_key: str | None = None,
+) -> tuple[dict, dict, dict[str, str]]:
+    try:
+        parsed_payload = parse_job_payload(payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if source_key:
+        parsed_payload["source_key"] = source_key
+    redacted_payload, payload_secrets = split_redacted_secrets(parsed_payload)
+    redacted_metadata, metadata_secrets = split_redacted_secrets(metadata or {})
+    secrets = {f"payload.{key}": value for key, value in payload_secrets.items()}
+    secrets.update({f"metadata.{key}": value for key, value in metadata_secrets.items()})
+    return redacted_payload, redacted_metadata, secrets
+
+
+def _store_job_secrets(services, job_id: str, secrets: dict[str, str]) -> None:
+    secret_store = getattr(services, "secret_store", None)
+    if secret_store is not None:
+        secret_store.put(job_id, secrets)
+
+
 @router.post("", response_model=JobResponse)
 def create_job(request: CreateJobRequest) -> JobResponse:
     services = get_services()
@@ -50,9 +77,11 @@ def create_job(request: CreateJobRequest) -> JobResponse:
             status_code=400,
             detail="input_path is disabled for API requests; use /jobs/upload, input_uri, or source_key",
         )
-    payload = dict(request.payload)
-    if request.source_key:
-        payload["source_key"] = request.source_key
+    payload, metadata, secrets = _prepare_payload_and_metadata(
+        dict(request.payload),
+        dict(request.metadata),
+        source_key=request.source_key,
+    )
     try:
         source_sha256 = resolve_source_sha256(
             source_sha256=request.source_sha256,
@@ -70,9 +99,10 @@ def create_job(request: CreateJobRequest) -> JobResponse:
         payload=payload,
         input_path=request.input_path,
         input_uri=request.input_uri,
-        metadata=request.metadata,
+        metadata=metadata,
         priority=request.priority,
     )
+    _store_job_secrets(services, job.id, secrets)
     metrics.submitted(job.pipeline_type)
     return JobResponse(**job.to_dict())
 
@@ -91,6 +121,8 @@ async def upload_job(
         metadata = json.loads(metadata_json or "{}")
     except json.JSONDecodeError as exc:
         raise HTTPException(status_code=400, detail="payload_json and metadata_json must be valid JSON") from exc
+    if not isinstance(payload, dict) or not isinstance(metadata, dict):
+        raise HTTPException(status_code=400, detail="payload_json and metadata_json must be JSON objects")
 
     filename = Path(file.filename or "input.mp4").name
     max_bytes = max(1, int(getattr(services.settings, "api_upload_max_bytes", 536_870_912)))
@@ -132,13 +164,14 @@ async def upload_job(
         if staging_path is not None:
             staging_path.unlink(missing_ok=True)
         await file.close()
-    payload["source_key"] = source_key
+    payload, metadata, secrets = _prepare_payload_and_metadata(payload, metadata, source_key=source_key)
     job = services.job_manager.create_job(
         pipeline_type=pipeline_type,
         source_sha256=source_sha256,
         payload=payload,
         metadata=metadata,
     )
+    _store_job_secrets(services, job.id, secrets)
     metrics.submitted(job.pipeline_type)
     return JobResponse(**job.to_dict())
 

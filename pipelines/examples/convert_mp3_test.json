@@ -1,0 +1,11 @@
+{
+  "pipeline_type": "low_level",
+  "payload": {
+    "operations": [
+      {
+        "name": "convert",
+        "output_format": "mp3"
+      }
+    ]
+  }
+}

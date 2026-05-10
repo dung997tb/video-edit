@@ -1,0 +1,14 @@
+{
+  "pipeline_type": "low_level",
+  "payload": {
+    "operations": [
+      {
+        "name": "chromakey",
+        "background_video": "test_input.mp4",
+        "color": "#00FF00",
+        "similarity": 0.3,
+        "blend": 0.1
+      }
+    ]
+  }
+}

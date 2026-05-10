@@ -93,3 +93,57 @@ def admin_jobs(status: str | None = Query(default=None), limit: int = Query(defa
         raise HTTPException(status_code=400, detail=f"invalid status: {escape(str(status))}") from exc
     jobs = services.job_manager.list_jobs(status=parsed_status, limit=limit)
     return JobListResponse(items=[JobResponse(**job.to_dict()) for job in jobs])
+
+
+@router.get("/jobs/{job_id}/assets")
+def admin_job_assets(job_id: str) -> dict:
+    services = get_services()
+    graph = getattr(services, "asset_graph", None)
+    if graph is None:
+        return {"items": []}
+    return {"items": [record.to_dict() for record in graph.list_for_job(job_id)]}
+
+
+@router.get("/events")
+def admin_events(event_type: str | None = Query(default=None), limit: int = Query(default=100, ge=1, le=500)) -> dict:
+    services = get_services()
+    event_bus = getattr(services, "event_bus", None)
+    if event_bus is None:
+        return {"items": []}
+    return {"items": [event.to_dict() for event in event_bus.recent(event_type=event_type, limit=limit)]}
+
+
+@router.delete("/jobs/{job_id}/cleanup")
+def admin_job_cleanup(job_id: str) -> dict:
+    services = get_services()
+    job = services.job_manager.get_job(job_id)
+    
+    output_name = None
+    if job:
+        output_name = job.payload.get("output_name")
+        
+    import re
+    import shutil
+    
+    safe_output_name = re.sub(r'[^a-zA-Z0-9_\-\.]', '_', output_name) if output_name else job_id
+
+    temp_dir = services.settings.temp_dir / job_id
+    output_dir = services.settings.output_dir / safe_output_name
+
+    deleted_temp = False
+    deleted_output = False
+
+    if temp_dir.exists() and temp_dir.is_dir():
+        shutil.rmtree(temp_dir, ignore_errors=True)
+        deleted_temp = True
+        
+    if output_dir.exists() and output_dir.is_dir():
+        shutil.rmtree(output_dir, ignore_errors=True)
+        deleted_output = True
+        
+    return {
+        "job_id": job_id,
+        "status": "success",
+        "deleted_temp": deleted_temp,
+        "deleted_output": deleted_output
+    }

@@ -6,6 +6,7 @@ from pathlib import Path
 from core.cache import canonical_json, make_operation_cache_key, sha256_text, stable_value_signature
 from core.models import StepResult
 from core.process import run_subprocess
+from modules.ai.provider_adapter import get_provider_config, provider_name
 from modules.base import BaseModule
 from modules.ai.tts_backends import build_tts_backend
 from modules.registry import register
@@ -33,18 +34,22 @@ class TTSModule(BaseModule):
         if not source_segments:
             raise ValueError("segments are required before TTS")
         target_language = context.metadata.get("target_language", context.state.get("target_language", "vi"))
-        voice = self.params.get("voice", context.state.get("tts_voice", services.settings.tts_default_voice))
+        provider_config = get_provider_config(context, services, "tts")
+        engine = provider_name(provider_config, services.settings.tts_engine)
+        voice = self.params.get("voice", provider_config.get("voice", context.state.get("tts_voice", services.settings.tts_default_voice)))
         rate = self.params.get("rate", context.state.get("tts_rate", services.settings.tts_rate))
         volume = self.params.get("volume", context.state.get("tts_volume", services.settings.tts_volume))
         cache_key = make_operation_cache_key(
             source_sha256=context.source_sha256,
             operation="tts",
-            model=services.settings.tts_engine,
+            model=engine,
             language=target_language,
             params={
                 "voice": voice,
                 "rate": rate,
                 "volume": volume,
+                "provider": engine,
+                "model": provider_config.get("model"),
                 "translator_service": context.state.get("translator_service", services.settings.translator_service),
                 "translated_segments_sha256": sha256_text(
                     canonical_json({"segments": [{k: segment[k] for k in ("start", "end", "text")} for segment in source_segments]})
@@ -66,7 +71,7 @@ class TTSModule(BaseModule):
                 },
                 artifacts={"tts_segments": [segment["path"] for segment in cached_segments]},
             )
-        backend = build_tts_backend(services.settings)
+        backend = build_tts_backend(services.settings, provider_config=provider_config)
         tts_segments = self._generate_all_segments(
             source_segments,
             backend=backend,
@@ -79,10 +84,11 @@ class TTSModule(BaseModule):
         artifacts = [segment["path"] for segment in tts_segments]
         metadata = dict(context.metadata)
         metadata["tts_voice"] = voice
+        metadata["tts_provider"] = engine
         services.cache_manager.save_operation_bundle(
             operation="tts",
             cache_key=cache_key,
-            payload={"tts_segments": tts_segments, "metadata": {"tts_voice": voice}},
+            payload={"tts_segments": tts_segments, "metadata": {"tts_voice": voice, "tts_provider": engine}},
             artifact_paths=artifacts,
             file_manager=context.file_manager,
         )

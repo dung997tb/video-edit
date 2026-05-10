@@ -181,10 +181,15 @@ class VoiceSyncModule(BaseModule):
         ]
         for plan in plans:
             command.extend(["-i", plan.path])
+        filter_complex = build_voice_filter_complex(plans)
+        if len(filter_complex) > 4000:
+            filter_script_path = context.file_manager.temp("06_voice_sync_filter.txt")
+            filter_script_path.write_text(filter_complex, encoding="utf-8")
+            command.extend(["-filter_complex_script", str(filter_script_path)])
+        else:
+            command.extend(["-filter_complex", filter_complex])
         command.extend(
             [
-                "-filter_complex",
-                build_voice_filter_complex(plans),
                 "-map",
                 "[out]",
                 str(output_path),

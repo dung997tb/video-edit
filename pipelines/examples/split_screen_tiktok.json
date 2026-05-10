@@ -1,0 +1,13 @@
+{
+  "pipeline_type": "low_level",
+  "payload": {
+    "operations": [
+      {
+        "name": "split_screen",
+        "b_roll_video": "test_input.mp4",
+        "split_ratio": 0.5,
+        "audio_source": "mix"
+      }
+    ]
+  }
+}

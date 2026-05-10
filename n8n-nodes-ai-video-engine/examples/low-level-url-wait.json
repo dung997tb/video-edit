@@ -1,0 +1,68 @@
+{
+  "name": "AI Video Engine - Low Level URL Wait",
+  "nodes": [
+    {
+      "parameters": {
+        "resource": "preset",
+        "presetOperation": "lowLevel",
+        "sourceMode": "inputUri",
+        "inputUri": "={{$json.video_url}}",
+        "operationTemplate": "cutScale",
+        "cutStart": 0,
+        "cutDuration": 5,
+        "scaleWidth": 1080,
+        "scaleHeight": 1920,
+        "outputMode": "job"
+      },
+      "id": "create-low-level",
+      "name": "Create Low Level Job",
+      "type": "n8n-nodes-ai-video-engine.aiVideoEngine",
+      "typeVersion": 1,
+      "position": [520, 300],
+      "credentials": {
+        "aiVideoEngineApi": {
+          "id": "REPLACE_WITH_CREDENTIAL_ID",
+          "name": "AI Video Engine API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "job",
+        "jobOperation": "wait",
+        "jobId": "={{$json.job_id}}",
+        "intervalSeconds": 15,
+        "timeoutSeconds": 900,
+        "failOnTerminalError": true,
+        "outputMode": "job"
+      },
+      "id": "wait-low-level",
+      "name": "Wait for Result",
+      "type": "n8n-nodes-ai-video-engine.aiVideoEngine",
+      "typeVersion": 1,
+      "position": [760, 300],
+      "credentials": {
+        "aiVideoEngineApi": {
+          "id": "REPLACE_WITH_CREDENTIAL_ID",
+          "name": "AI Video Engine API"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Create Low Level Job": {
+      "main": [
+        [
+          {
+            "node": "Wait for Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

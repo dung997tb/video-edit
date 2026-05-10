@@ -91,6 +91,8 @@ class Settings(BaseSettings):
     openai_api_key: str | None = Field(default=None, alias="OPENAI_API_KEY")
     openai_tts_model: str = Field(default="gpt-4o-mini-tts", alias="OPENAI_TTS_MODEL")
     google_cloud_tts_key: str | None = Field(default=None, alias="GOOGLE_CLOUD_TTS_KEY")
+    elevenlabs_api_key: str | None = Field(default=None, alias="ELEVENLABS_API_KEY")
+    elevenlabs_tts_model: str = Field(default="eleven_multilingual_v2", alias="ELEVENLABS_TTS_MODEL")
 
     supabase_url: str | None = Field(default=None, alias="SUPABASE_URL")
     supabase_key: str | None = Field(default=None, alias="SUPABASE_KEY")
@@ -99,6 +101,8 @@ class Settings(BaseSettings):
 
     job_backend: str = Field(default="memory", alias="JOB_BACKEND")
     artifact_store_backend: str = Field(default="local", alias="ARTIFACT_STORE_BACKEND")
+    asset_graph_backend: str = Field(default="memory", alias="ASSET_GRAPH_BACKEND")
+    event_log_backend: str = Field(default="memory", alias="EVENT_LOG_BACKEND")
 
     output_dir: Path = Field(default=Path("output"), alias="OUTPUT_DIR")
     temp_dir: Path = Field(default=Path("temp"), alias="TEMP_DIR")
@@ -119,7 +123,7 @@ class Settings(BaseSettings):
     cache_version: str = Field(default="v1", alias="CACHE_VERSION")
 
     api_host: str = Field(default="0.0.0.0", alias="API_HOST")
-    api_port: int = Field(default=8000, alias="API_PORT")
+    api_port: int = Field(default=6666, alias="API_PORT")
     api_secret_key: str = Field(default="change-me-in-production", alias="API_SECRET_KEY")
     api_auth_enabled: bool = Field(default=True, alias="API_AUTH_ENABLED")
     api_embedded_worker: bool = Field(default=True, alias="API_EMBEDDED_WORKER")

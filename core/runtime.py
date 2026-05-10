@@ -7,15 +7,18 @@ from typing import Any, Callable
 from config import settings as default_settings
 from config.settings import Settings
 from core.artifact_store import ArtifactStore, LocalArtifactStore, SupabaseArtifactStore
+from core.asset_graph import InMemoryAssetGraph
 from core.cache import CacheManager
+from core.events import InMemoryEventBus
 from core.exceptions import ConfigurationError
 from core.job_manager import InMemoryJobRepository, JobManager, JobRepository, SupabaseJobRepository
 from core.logger import configure_logger
 from core.process import ProcessRegistry
 from core.models import JobRecord
+from core.secrets import InMemorySecretStore
 
 
-PipelineBuilder = Callable[[JobRecord, "AppServices"], list[Any]]
+PipelineBuilder = Callable[[JobRecord, "AppServices"], Any]
 
 
 @dataclass(slots=True)
@@ -25,6 +28,9 @@ class AppServices:
     cache_manager: CacheManager
     job_manager: JobManager
     process_registry: ProcessRegistry
+    secret_store: InMemorySecretStore = field(default_factory=InMemorySecretStore)
+    asset_graph: Any = field(default_factory=InMemoryAssetGraph)
+    event_bus: Any = field(default_factory=InMemoryEventBus)
     pipeline_builders: dict[str, PipelineBuilder] = field(default_factory=dict)
 
 
@@ -49,6 +55,22 @@ def build_job_repository(settings: Settings) -> JobRepository:
         client = create_supabase_client(settings)
         return SupabaseJobRepository(client, settings.supabase_jobs_table)
     return InMemoryJobRepository()
+
+
+def build_asset_graph(settings: Settings) -> Any:
+    if settings.asset_graph_backend == "sqlite":
+        from core.asset_graph_sqlite import SQLiteAssetGraph
+
+        return SQLiteAssetGraph(settings.cache_dir / "asset_graph.db")
+    return InMemoryAssetGraph()
+
+
+def build_event_bus(settings: Settings) -> Any:
+    if settings.event_log_backend == "sqlite":
+        from core.events_sqlite import SQLiteEventBus
+
+        return SQLiteEventBus(settings.cache_dir / "events.db")
+    return InMemoryEventBus()
 
 
 def build_pipeline_builders() -> dict[str, PipelineBuilder]:
@@ -77,6 +99,9 @@ def build_services(settings: Settings | None = None) -> AppServices:
         cache_manager=cache_manager,
         job_manager=job_manager,
         process_registry=process_registry,
+        secret_store=InMemorySecretStore(),
+        asset_graph=build_asset_graph(active_settings),
+        event_bus=build_event_bus(active_settings),
         pipeline_builders=build_pipeline_builders(),
     )
 

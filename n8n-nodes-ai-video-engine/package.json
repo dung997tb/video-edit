@@ -1,0 +1,72 @@
+{
+  "name": "n8n-nodes-ai-video-engine",
+  "version": "0.1.0",
+  "description": "n8n community nodes for creating, monitoring, and receiving callbacks from AI Video Engine jobs.",
+  "license": "MIT",
+  "homepage": "https://github.com/your-org/ai-video-engine",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/your-org/ai-video-engine.git",
+    "directory": "n8n-nodes-ai-video-engine"
+  },
+  "bugs": {
+    "url": "https://github.com/your-org/ai-video-engine/issues"
+  },
+  "author": {
+    "name": "AI Video Engine"
+  },
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist",
+    "examples",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "n8n-node build && node scripts/fix-dist-assets.mjs",
+    "dev": "n8n-node dev",
+    "lint": "eslint \"src/**/*.ts\" \"test/**/*.ts\"",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "prepack": "npm run build"
+  },
+  "keywords": [
+    "n8n-community-node-package",
+    "n8n",
+    "video",
+    "ai",
+    "automation",
+    "dubbing",
+    "subtitle",
+    "ffmpeg"
+  ],
+  "engines": {
+    "node": ">=20.15"
+  },
+  "peerDependencies": {
+    "n8n-core": "^2.16.1",
+    "n8n-workflow": "^2.16.0"
+  },
+  "devDependencies": {
+    "@n8n/node-cli": "^0.29.1",
+    "@types/node": "^24.0.0",
+    "@typescript-eslint/eslint-plugin": "^8.0.0",
+    "@typescript-eslint/parser": "^8.0.0",
+    "eslint": "^9.0.0",
+    "n8n-core": "^2.16.1",
+    "n8n-workflow": "^2.16.0",
+    "typescript": "^5.8.0",
+    "vitest": "^3.0.0"
+  },
+  "n8n": {
+    "n8nNodesApiVersion": 1,
+    "credentials": [
+      "dist/credentials/AiVideoEngineApi.credentials.js"
+    ],
+    "nodes": [
+      "dist/nodes/AiVideoEngine/AiVideoEngine.node.js",
+      "dist/nodes/AiVideoEngineTrigger/AiVideoEngineTrigger.node.js"
+    ]
+  }
+}

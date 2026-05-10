@@ -8,6 +8,7 @@ class SubtitleOrchestrator(PipelineOrchestrator):
 
     def build(self, job, services):
         from modules.ai.segmenter import SegmenterModule
+        from modules.ai.karaoke_subtitle import KaraokeSubtitleModule
         from modules.ai.subtitle_export import SubtitleExportModule
         from modules.ai.subtitle_gen import SubtitleModule
         from modules.ai.transcriber import TranscriberModule
@@ -44,7 +45,10 @@ class SubtitleOrchestrator(PipelineOrchestrator):
                     }
                 )
             )
-        pipeline.append(SubtitleModule())
+        if payload.get("subtitle_style") == "karaoke":
+            pipeline.append(KaraokeSubtitleModule(params=payload))
+        else:
+            pipeline.append(SubtitleModule())
         if payload.get("burn_subtitle") or payload.get("burn_subtitles") or payload.get("hard_subtitles"):
             pipeline.append(SubtitleBurnModule())
         pipeline.append(SubtitleExportModule())

@@ -13,6 +13,8 @@ def resolve_working_audio(context: Any) -> str:
         or context.mixed_audio
         or context.synced_audio
         or context.audio_path
+        or context.state.get("working_video")
+        or context.input_video
         or ""
     )
 
@@ -46,4 +48,3 @@ def working_audio_result(output_path: Path) -> StepResult:
         context_patch={"state": {"working_audio": output}},
         artifacts={"working_audio": output},
     )
-

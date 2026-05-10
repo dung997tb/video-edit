@@ -1,0 +1,26 @@
+{
+  "pipeline_type": "low_level",
+  "payload": {
+    "operations": [
+      {
+        "name": "blur_bg_portrait",
+        "output_width": 1080,
+        "output_height": 1920
+      },
+      {
+        "name": "pad_border",
+        "size": 10,
+        "color": "#000000"
+      },
+      {
+        "name": "content_variant",
+        "grain": 3,
+        "hue_shift": 2.0
+      },
+      {
+        "name": "auto_zoom",
+        "interval_seconds": 5
+      }
+    ]
+  }
+}

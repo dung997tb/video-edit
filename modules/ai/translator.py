@@ -4,6 +4,8 @@ import json
 
 from core.cache import make_operation_cache_key, stable_value_signature
 from core.models import StepResult
+from modules.ai.provider_adapter import get_provider_config, provider_name
+from modules.ai.translation_adapter import build_translation_callable
 from modules.base import BaseModule
 from modules.registry import register
 
@@ -27,7 +29,8 @@ class TranslatorModule(BaseModule):
     def execute(self, context, services) -> StepResult:
         if not context.segments:
             raise ValueError("segments are required before translation")
-        service = self.params.get("service", services.settings.translator_service)
+        provider_config = get_provider_config(context, services, "translation")
+        service = provider_name(provider_config, self.params.get("service", services.settings.translator_service))
         source_language = self.params.get("source_language", context.metadata.get("detected_language", "auto"))
         target_language = self.params.get("target_language", context.state.get("target_language", "vi"))
         transcript_signature = (
@@ -56,6 +59,7 @@ class TranslatorModule(BaseModule):
                 source_language=source_language,
                 target_language=target_language,
                 services=services,
+                provider_config=provider_config,
             )
             for segment in context.segments:
                 text = segment["text"].strip()
@@ -82,33 +86,11 @@ class TranslatorModule(BaseModule):
             artifacts={"translation": str(output_path)},
         )
 
-    def _build_translator(self, *, service: str, source_language: str, target_language: str, services):
-        if service == "deepl":
-            try:
-                from deep_translator import DeeplTranslator
-            except ImportError as exc:
-                raise RuntimeError("deep-translator is required for Deepl translation") from exc
-            if not services.settings.deepl_api_key:
-                raise RuntimeError("DEEPL_API_KEY is required for Deepl translation")
-            translator = DeeplTranslator(
-                api_key=services.settings.deepl_api_key,
-                source=source_language,
-                target=target_language,
-            )
-            return translator.translate
-
-        try:
-            from deep_translator import GoogleTranslator, LibreTranslator
-        except ImportError as exc:
-            raise RuntimeError("deep-translator is required for translation") from exc
-
-        if service == "libre":
-            translator = LibreTranslator(
-                source=source_language,
-                target=target_language,
-                base_url=services.settings.libretranslate_url,
-            )
-            return translator.translate
-
-        translator = GoogleTranslator(source=source_language, target=target_language)
-        return translator.translate
+    def _build_translator(self, *, service: str, source_language: str, target_language: str, services, provider_config=None):
+        return build_translation_callable(
+            service=service,
+            source_language=source_language,
+            target_language=target_language,
+            services=services,
+            provider_config=provider_config,
+        )
