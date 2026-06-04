@@ -98,6 +98,8 @@ class N8nNodeTestRunner:
         self.api_process: subprocess.Popen[str] | None = None
         self.media_server: http.server.ThreadingHTTPServer | None = None
         self.media_thread: threading.Thread | None = None
+        self.tunnel_process: subprocess.Popen[str] | None = None
+        self.tunnel_url: str | None = None
         self.created_workflows: list[str] = []
         self.results: list[TestResult] = []
         self.custom_node_available = False
@@ -230,6 +232,54 @@ class N8nNodeTestRunner:
             self.media_thread.join(timeout=5)
         self.media_server = None
         self.media_thread = None
+
+    def start_tunnel(self) -> str | None:
+        if not self.args.tunnel:
+            return None
+        port = 6666
+        match = re.search(r":(\d+)", self.verify_api_url)
+        if match:
+            port = int(match.group(1))
+
+        print(f"Starting localtunnel on port {port}...")
+        self.tunnel_process = subprocess.Popen(
+            ["npx", "-y", "localtunnel", "--port", str(port)],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
+
+        deadline = time.monotonic() + 15
+        tunnel_url = None
+        while time.monotonic() < deadline:
+            line = self.tunnel_process.stdout.readline()
+            if not line:
+                time.sleep(0.5)
+                continue
+            line_str = line.strip()
+            print(f"[localtunnel] {line_str}")
+            if "your url is:" in line_str:
+                tunnel_url = line_str.split("your url is:", 1)[1].strip()
+                break
+
+        if not tunnel_url:
+            self.tunnel_process.terminate()
+            raise RuntimeError("Failed to obtain tunnel URL from localtunnel")
+
+        print(f"Tunnel successfully created: {tunnel_url}")
+        return tunnel_url
+
+    def stop_tunnel(self) -> None:
+        if self.tunnel_process is not None:
+            print("Stopping localtunnel...")
+            self.tunnel_process.terminate()
+            try:
+                self.tunnel_process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                self.tunnel_process.kill()
+            self.tunnel_process = None
 
     def restart_api(self) -> None:
         if not self.args.auto_start_api:
@@ -893,6 +943,11 @@ class N8nNodeTestRunner:
             self.add_result("SETUP", "Custom node availability", "BLOCKED", time.perf_counter(), "aiVideoEngineApi schema not loaded in n8n")
             return self.make_report()
         self.start_api()
+        if self.args.tunnel:
+            tunnel_url = self.start_tunnel()
+            if tunnel_url:
+                self.tunnel_url = tunnel_url
+                self.video_api_url = tunnel_url.rstrip("/")
         self.start_media_server()
         self.upload_custom_source_key()
         self.resolve_custom_credential()
@@ -901,6 +956,7 @@ class N8nNodeTestRunner:
         self.cleanup_workflows()
         report = self.make_report()
         self.stop_media_server()
+        self.stop_tunnel()
         self.stop_api()
         return report
 
@@ -920,6 +976,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--source-key", default="", help="Existing artifact source_key for custom-node mode")
     parser.add_argument("--group", choices=("all", "smoke", "preset", "trigger", "batch"), default="smoke")
     parser.add_argument("--auto-start-api", action="store_true")
+    parser.add_argument("--tunnel", action="store_true", help="Start localtunnel for public URL callback")
     parser.add_argument("--keep-workflows", action="store_true")
     parser.add_argument("--report-dir", default="test_runs/n8n_node_tests")
     return parser.parse_args()
@@ -933,6 +990,7 @@ def main() -> int:
     finally:
         runner.cleanup_workflows()
         runner.stop_media_server()
+        runner.stop_tunnel()
         runner.stop_api()
     print(json.dumps(report, ensure_ascii=False, indent=2))
     return 0
