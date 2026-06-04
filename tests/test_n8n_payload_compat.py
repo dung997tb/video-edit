@@ -63,6 +63,7 @@ class N8nPayloadCompatTests(unittest.TestCase):
             "low_level": lambda *_args, **_kwargs: None,
             "dubbing": lambda *_args, **_kwargs: None,
             "multilang_dubbing": lambda *_args, **_kwargs: None,
+            "split_video": lambda *_args, **_kwargs: None,
         }
         patches = [
             patch("api.main.get_services", return_value=services),
@@ -144,6 +145,24 @@ class N8nPayloadCompatTests(unittest.TestCase):
         job = services.job_manager.get_job(response.json()["id"])
         self.assertEqual(job.payload["target_languages"], ["en", "ja", "ko"])
 
+    def test_n8n_split_video_direct_pipeline_payload(self) -> None:
+        client, services = self._client_and_services()
+
+        response = client.post(
+            "/jobs",
+            json={
+                "pipeline_type": "split_video",
+                "input_uri": "https://example.com/video.mp4",
+                "payload": {"segment_seconds": 30, "start": 5, "end": 65},
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        job = services.job_manager.get_job(response.json()["id"])
+        self.assertEqual(job.pipeline_type, "split_video")
+        self.assertEqual(job.payload["segment_seconds"], 30)
+        self.assertNotIn("operations", job.payload)
+
     def test_n8n_source_key_flow(self) -> None:
         client, services = self._client_and_services()
         services.artifact_store.upload_bytes("imports/source.mp4", b"source bytes")
@@ -191,6 +210,7 @@ class N8nPayloadCompatTests(unittest.TestCase):
 
     def test_n8n_webhook_url_triggers_dispatch(self) -> None:
         client, services = self._client_and_services()
+        services.settings.api_allow_private_network_urls = True
         server, url, recorder = _start_webhook_server()
         self.addCleanup(server.server_close)
         self.addCleanup(server.shutdown)
@@ -206,7 +226,13 @@ class N8nPayloadCompatTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         job_id = response.json()["id"]
-        services.job_manager.complete_job(job_id, "output.mp4", metadata={"result_items": []})
+        services.job_manager.claim_jobs("worker-a", limit=1, lease_seconds=30)
+        services.job_manager.complete_job(
+            job_id,
+            "output.mp4",
+            metadata={"result_items": []},
+            worker_id="worker-a",
+        )
 
         self.assertTrue(recorder.event.wait(2.0))
         self.assertEqual(recorder.payloads[0]["event"], "job.completed")

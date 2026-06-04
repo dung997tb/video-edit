@@ -75,9 +75,17 @@ class SupabaseJobRepositoryTests(unittest.TestCase):
     def test_complete_job_updates_status_done(self) -> None:
         client = MagicMock()
         table = client.table.return_value
-        query = table.update.return_value
-        query.eq.return_value = query
-        query.execute.return_value = SimpleNamespace(
+        
+        select_query = table.select.return_value
+        select_query.eq.return_value = select_query
+        select_query.limit.return_value = select_query
+        select_query.execute.return_value = SimpleNamespace(
+            data=[_record_dict(status=JobStatus.RUNNING)]
+        )
+
+        update_query = table.update.return_value
+        update_query.eq.return_value = update_query
+        update_query.execute.return_value = SimpleNamespace(
             data=[_record_dict(status=JobStatus.DONE, output_path="output.mp4", progress=100)]
         )
         repo = SupabaseJobRepository(client, table="jobs")

@@ -36,5 +36,9 @@ class JobCancelledError(VideoEditError):
     pass
 
 
+class IllegalStateTransition(VideoEditError):
+    """Raised when a job state transition violates the lifecycle contract."""
+
+
 class ConfigurationError(VideoEditError):
     pass

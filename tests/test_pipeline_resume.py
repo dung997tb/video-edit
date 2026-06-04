@@ -3,7 +3,7 @@ from __future__ import annotations
 import unittest
 from pathlib import Path
 
-from core.models import StepResult
+from core.models import JobStatus, StepResult
 from core.pipeline import PipelineRunner
 from modules.base import BaseModule
 from tests.helpers import make_services, make_test_root
@@ -59,12 +59,16 @@ class PipelineResumeTests(unittest.TestCase):
             input_path=str(input_video),
         )
         runner = PipelineRunner(services)
+        worker_id = services.settings.resolved_worker_id
+        claimed = services.job_manager.claim_jobs(worker_id, limit=1, lease_seconds=30)[0]
 
         with self.assertRaises(RuntimeError):
-            runner.run_job(job)
+            runner.run_job(claimed)
 
         rerun_job = services.job_manager.get_job(job.id)
         self.assertIsNotNone(rerun_job)
+        services.job_manager.repository._records[job.id].status = JobStatus.RUNNING
+        services.job_manager.repository._records[job.id].worker_id = worker_id
         result = runner.run_job(rerun_job)
 
         self.assertEqual(StepOne.calls, 1)

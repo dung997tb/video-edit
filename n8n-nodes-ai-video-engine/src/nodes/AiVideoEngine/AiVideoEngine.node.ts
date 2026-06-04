@@ -1,4 +1,4 @@
-import type {
+﻿import type {
 	IDataObject,
 	IExecuteFunctions,
 	IHttpRequestMethods,
@@ -30,14 +30,15 @@ type AiVideoEngineCredentials = {
 
 export class AiVideoEngine implements INodeType {
 	description: INodeTypeDescription = {
-		displayName: 'AI Video Engine',
+		displayName: 'Mewocamm Video Editor',
 		name: 'aiVideoEngine',
 		icon: 'file:aiVideoEngine.svg',
 		group: ['transform'],
 		version: 1,
-		description: 'Create, monitor, and manage AI Video Engine jobs',
+		subtitle: '={{$parameter["resource"] === "job" ? "Job: " + $parameter["jobOperation"] : "Tác vụ: " + $parameter["presetOperation"]}}',
+		description: 'Tạo, chạy, theo dõi và quản lý job xử lý video bằng Mewocamm Video Editor.',
 		defaults: {
-			name: 'AI Video Engine',
+			name: 'Mewocamm Video Editor',
 		},
 		inputs: [NodeConnectionTypes.Main],
 		outputs: [NodeConnectionTypes.Main],
@@ -64,6 +65,7 @@ export class AiVideoEngine implements INodeType {
 					},
 				],
 				default: 'job',
+				description: 'Chọn nhóm thao tác: quản lý job trực tiếp hoặc dùng preset xử lý video dựng sẵn.',
 			},
 			{
 				displayName: 'Operation',
@@ -79,35 +81,42 @@ export class AiVideoEngine implements INodeType {
 					{
 						name: 'Cancel',
 						value: 'cancel',
-						action: 'Cancel a job',
+						description: 'Gửi yêu cầu hủy job đang chờ hoặc đang chạy.',
+						action: 'Hủy một job video',
 					},
 					{
 						name: 'Create Custom',
 						value: 'createCustom',
-						action: 'Create a custom job',
+						description: 'Tạo job bằng pipeline_type và Payload JSON tự viết.',
+						action: 'Tạo job video tùy chỉnh',
 					},
 					{
 						name: 'Get',
 						value: 'get',
-						action: 'Get a job',
+						description: 'Lấy trạng thái và metadata của một job theo Job ID.',
+						action: 'Lấy thông tin một job',
 					},
 					{
 						name: 'List',
 						value: 'list',
-						action: 'List jobs',
+						description: 'Liệt kê các job gần đây, có thể lọc theo trạng thái.',
+						action: 'Liệt kê job video',
 					},
 					{
 						name: 'Upload And Create',
 						value: 'uploadAndCreate',
-						action: 'Upload binary data and create a job',
+						description: 'Upload binary video từ node trước rồi tạo job xử lý.',
+						action: 'Upload video và tạo job',
 					},
 					{
 						name: 'Wait',
 						value: 'wait',
-						action: 'Wait for a job to finish',
+						description: 'Chờ job hoàn tất bằng polling. Nên dùng Trigger cho render dài.',
+						action: 'Chờ job hoàn tất',
 					},
 				],
 				default: 'createCustom',
+				description: 'Chọn thao tác quản lý job muốn chạy.',
 			},
 			{
 				displayName: 'Operation',
@@ -123,35 +132,48 @@ export class AiVideoEngine implements INodeType {
 					{
 						name: 'Dubbing',
 						value: 'dubbing',
-						action: 'Create a dubbing job',
+						description: 'Tạo job lồng tiếng hoặc dịch giọng sang ngôn ngữ đích.',
+						action: 'Tạo job lồng tiếng',
 					},
 					{
 						name: 'Extract Audio',
 						value: 'extractAudio',
-						action: 'Create an audio extraction job',
+						description: 'Tách âm thanh từ video thành file audio.',
+						action: 'Tách âm thanh từ video',
 					},
 					{
 						name: 'Extract Frames',
 						value: 'extractFrames',
-						action: 'Create a frame extraction job',
+						description: 'Trích xuất frame ảnh từ video theo FPS và giới hạn số lượng.',
+						action: 'Trích xuất frame từ video',
 					},
 					{
 						name: 'Low Level Edit',
 						value: 'lowLevel',
-						action: 'Create a low-level edit job',
+						description: 'Chạy các thao tác FFmpeg như cắt, scale, reframe, split screen hoặc JSON tùy chỉnh.',
+						action: 'Tạo job cắt ghép video',
 					},
 					{
 						name: 'Silence Cut',
 						value: 'silenceCut',
-						action: 'Create a silence cut job',
+						description: 'Tự động loại bỏ đoạn im lặng hoặc ít tiếng trong video.',
+						action: 'Cắt khoảng lặng trong video',
 					},
 					{
 						name: 'Subtitle',
 						value: 'subtitle',
-						action: 'Create a subtitle job',
+						description: 'Tạo phụ đề hoặc burn phụ đề trực tiếp lên video.',
+						action: 'Tạo job phụ đề',
+					},
+					{
+						name: 'Split Video — Chia clip thành nhiều đoạn',
+						value: 'splitVideo',
+						description: 'Chia 1 clip thành nhiều đoạn nhỏ: tự động theo thời lượng cố định hoặc tùy chỉnh từng mốc cắt.',
+						action: 'Chia video thành nhiều clip',
 					},
 				],
 				default: 'lowLevel',
+				description: 'Chọn preset video/audio dựng sẵn để tạo job nhanh.',
 			},
 			...jobFields(),
 			...presetFields(),
@@ -329,6 +351,34 @@ async function executePresetOperation(this: IExecuteFunctions, itemIndex: number
 			format: this.getNodeParameter('imageFormat', itemIndex, 'jpg'),
 			max_frames: this.getNodeParameter('maxFrames', itemIndex, 10),
 		};
+	} else if (operation === 'splitVideo') {
+		pipelineType = 'split_video';
+		const splitMode = this.getNodeParameter('splitMode', itemIndex, 'auto') as string;
+		if (splitMode === 'auto') {
+			const segmentSeconds = this.getNodeParameter('segmentSeconds', itemIndex, 30) as number;
+			const splitStart = this.getNodeParameter('splitStart', itemIndex, 0) as number;
+			const splitEnd = this.getNodeParameter('splitEnd', itemIndex, 0) as number;
+			payload = {
+				segment_seconds: segmentSeconds,
+				...(splitStart > 0 ? { start: splitStart } : {}),
+				...(splitEnd > 0 ? { end: splitEnd } : {}),
+			};
+		} else {
+			// custom segments mode
+			const segmentsJson = this.getNodeParameter('segmentsJson', itemIndex, '[]') as string;
+			let segments: unknown;
+			try {
+				segments = JSON.parse(segmentsJson);
+			} catch {
+				throw new NodeOperationError(this.getNode(), 'Segments JSON không hợp lệ. Phải là array JSON.', { itemIndex });
+			}
+			if (!Array.isArray(segments) || segments.length === 0) {
+				throw new NodeOperationError(this.getNode(), 'Segments JSON phải là array có ít nhất 1 phần tử.', { itemIndex });
+			}
+			payload = {
+				segments,
+			};
+		}
 	} else {
 		throw new NodeOperationError(this.getNode(), `Unsupported preset operation: ${operation}`, { itemIndex });
 	}
@@ -457,7 +507,7 @@ function sourceInputFields(displayOperations: string[], resource: string): INode
 				},
 			],
 			default: 'inputUri',
-			description: 'Portable source selection; local input_path is intentionally not exposed',
+			description: 'Chọn nguồn video portable: URL HTTP/HTTPS hoặc source_key đã có trong artifact store. Không expose input_path local để tránh phụ thuộc máy chạy.',
 			displayOptions: sourceModeDisplay,
 		},
 		{
@@ -466,7 +516,7 @@ function sourceInputFields(displayOperations: string[], resource: string): INode
 			type: 'string',
 			default: '',
 			placeholder: 'https://example.com/video.mp4',
-			description: 'HTTP or HTTPS URL of the source media',
+			description: 'URL HTTP/HTTPS của video nguồn mà backend Mewocamm có thể tải được.',
 			displayOptions: {
 				show: {
 					...sourceModeShow,
@@ -480,7 +530,7 @@ function sourceInputFields(displayOperations: string[], resource: string): INode
 			type: 'string',
 			default: '',
 			placeholder: 'uploads/sha256/input.mp4',
-			description: 'Artifact-store key already available to AI Video Engine',
+			description: 'Khóa artifact đã tồn tại trong kho lưu trữ của Mewocamm Video Editor.',
 			displayOptions: {
 				show: {
 					...sourceModeShow,
@@ -502,6 +552,7 @@ function jobFields(): INodeTypeDescription['properties'] {
 			type: 'string',
 			default: 'low_level',
 			placeholder: 'low_level',
+			description: 'Loại pipeline video muốn chạy, ví dụ low_level, dubbing, subtitle, silence_cut, audio-extract hoặc extract_frames.',
 			displayOptions: {
 				show: {
 					resource: ['job'],
@@ -515,7 +566,7 @@ function jobFields(): INodeTypeDescription['properties'] {
 			name: 'binaryPropertyName',
 			type: 'string',
 			default: 'data',
-			description: 'Name of the incoming binary property to upload',
+			description: 'Tên binary property từ node trước chứa file video cần upload. Mặc định là data.',
 			displayOptions: showFor('job', uploadOps),
 		},
 		{
@@ -524,6 +575,7 @@ function jobFields(): INodeTypeDescription['properties'] {
 			type: 'string',
 			default: '',
 			required: true,
+			description: 'ID của job Mewocamm cần lấy trạng thái, hủy hoặc chờ hoàn tất.',
 			displayOptions: showFor('job', idOps),
 		},
 		{
@@ -539,6 +591,7 @@ function jobFields(): INodeTypeDescription['properties'] {
 				{ name: 'Cancelled', value: 'cancelled' },
 			],
 			default: '',
+			description: 'Lọc danh sách job theo trạng thái. Any sẽ lấy mọi trạng thái.',
 			displayOptions: showFor('job', ['list']),
 		},
 		{
@@ -550,6 +603,7 @@ function jobFields(): INodeTypeDescription['properties'] {
 				maxValue: 200,
 			},
 			default: 50,
+			description: 'Số lượng job tối đa trả về khi liệt kê.',
 			displayOptions: showFor('job', ['list']),
 		},
 		{
@@ -557,7 +611,7 @@ function jobFields(): INodeTypeDescription['properties'] {
 			name: 'payloadJson',
 			type: 'json',
 			default: '{}',
-			description: 'Pipeline payload JSON object',
+			description: 'Cấu hình xử lý video gửi vào backend Mewocamm. Đây là JSON object truyền vào payload của job.',
 			displayOptions: showFor('job', [...createOps, ...uploadOps]),
 		},
 		...commonJobOptions('job', [...createOps, ...uploadOps]),
@@ -566,7 +620,7 @@ function jobFields(): INodeTypeDescription['properties'] {
 }
 
 function presetFields(): INodeTypeDescription['properties'] {
-	const presetOps = ['lowLevel', 'dubbing', 'subtitle', 'silenceCut', 'extractAudio', 'extractFrames'];
+	const presetOps = ['lowLevel', 'dubbing', 'subtitle', 'silenceCut', 'extractAudio', 'extractFrames', 'splitVideo'];
 	return [
 		...sourceInputFields(presetOps, 'preset'),
 		{
@@ -574,14 +628,15 @@ function presetFields(): INodeTypeDescription['properties'] {
 			name: 'operationTemplate',
 			type: 'options',
 			options: [
-				{ name: 'Audio Operations', value: 'audioOps' },
-				{ name: 'Custom JSON', value: 'customJson' },
-				{ name: 'Cut And Scale', value: 'cutScale' },
-				{ name: 'Portrait Reframe', value: 'portrait' },
-				{ name: 'Split Screen', value: 'splitScreen' },
-				{ name: 'Split Screen HStack', value: 'hstack' },
+				{ name: 'Audio Operations', value: 'audioOps', description: 'Thử nhanh các thao tác âm thanh như pitch, fade và volume.' },
+				{ name: 'Custom JSON', value: 'customJson', description: 'Tự viết mảng operations để gọi low_level pipeline.' },
+				{ name: 'Cut And Scale', value: 'cutScale', description: 'Cắt một đoạn video rồi scale về kích thước mong muốn.' },
+				{ name: 'Portrait Reframe', value: 'portrait', description: 'Đổi video sang khung dọc 9:16 cho TikTok/Reels/Shorts.' },
+				{ name: 'Split Screen', value: 'splitScreen', description: 'Ghép video chính và B-roll theo bố cục chia màn hình.' },
+				{ name: 'Split Screen HStack', value: 'hstack', description: 'Ghép hai video cạnh nhau theo chiều ngang.' },
 			],
 			default: 'cutScale',
+			description: 'Chọn template low-level edit để node tự tạo operations JSON phù hợp.',
 			displayOptions: showFor('preset', ['lowLevel']),
 		},
 		...lowLevelFields(),
@@ -589,13 +644,14 @@ function presetFields(): INodeTypeDescription['properties'] {
 		...subtitleFields(),
 		...silenceCutFields(),
 		...extractFields(),
+		...splitVideoFields(),
 		{
 			displayName: 'Webhook URL',
 			name: 'webhookUrl',
 			type: 'string',
 			default: '',
 			placeholder: 'https://n8n.example/webhook/ai-video-engine',
-			description: 'Optional callback URL. Prefer this with the trigger node for long renders.',
+			description: 'URL callback tùy chọn. Với render dài, nên dùng cùng Mewocamm Video Editor Trigger thay vì Wait polling.',
 			displayOptions: showFor('preset', presetOps),
 		},
 		{
@@ -603,7 +659,7 @@ function presetFields(): INodeTypeDescription['properties'] {
 			name: 'outputName',
 			type: 'string',
 			default: '',
-			description: 'Optional output folder/name hint passed to the backend payload',
+			description: 'Tên gợi ý cho thư mục hoặc file output để dễ nhận biết artifact sau khi job hoàn tất.',
 			displayOptions: showFor('preset', presetOps),
 		},
 		...commonJobOptions('preset', presetOps),
@@ -617,6 +673,7 @@ function lowLevelFields(): INodeTypeDescription['properties'] {
 			name: 'cutStart',
 			type: 'number',
 			default: 0,
+			description: 'Thời điểm bắt đầu cắt, tính bằng giây.',
 			displayOptions: showForLowLevelTemplate(['cutScale']),
 		},
 		{
@@ -624,6 +681,7 @@ function lowLevelFields(): INodeTypeDescription['properties'] {
 			name: 'cutDuration',
 			type: 'number',
 			default: 10,
+			description: 'Độ dài đoạn video cần giữ lại, tính bằng giây.',
 			displayOptions: showForLowLevelTemplate(['cutScale']),
 		},
 		{
@@ -631,6 +689,7 @@ function lowLevelFields(): INodeTypeDescription['properties'] {
 			name: 'scaleWidth',
 			type: 'number',
 			default: 1080,
+			description: 'Chiều rộng output sau khi scale.',
 			displayOptions: showForLowLevelTemplate(['cutScale']),
 		},
 		{
@@ -638,6 +697,7 @@ function lowLevelFields(): INodeTypeDescription['properties'] {
 			name: 'scaleHeight',
 			type: 'number',
 			default: 1920,
+			description: 'Chiều cao output sau khi scale.',
 			displayOptions: showForLowLevelTemplate(['cutScale']),
 		},
 		{
@@ -645,6 +705,7 @@ function lowLevelFields(): INodeTypeDescription['properties'] {
 			name: 'portraitWidth',
 			type: 'number',
 			default: 1080,
+			description: 'Chiều rộng output portrait.',
 			displayOptions: showForLowLevelTemplate(['portrait']),
 		},
 		{
@@ -652,6 +713,7 @@ function lowLevelFields(): INodeTypeDescription['properties'] {
 			name: 'portraitHeight',
 			type: 'number',
 			default: 1920,
+			description: 'Chiều cao output portrait.',
 			displayOptions: showForLowLevelTemplate(['portrait']),
 		},
 		{
@@ -659,6 +721,7 @@ function lowLevelFields(): INodeTypeDescription['properties'] {
 			name: 'borderSize',
 			type: 'number',
 			default: 0,
+			description: 'Độ dày viền khi reframe portrait.',
 			displayOptions: showForLowLevelTemplate(['portrait']),
 		},
 		{
@@ -666,6 +729,7 @@ function lowLevelFields(): INodeTypeDescription['properties'] {
 			name: 'borderColor',
 			type: 'string',
 			default: '#000000',
+			description: 'Màu viền khi reframe portrait, ví dụ #000000.',
 			displayOptions: showForLowLevelTemplate(['portrait']),
 		},
 		{
@@ -673,6 +737,7 @@ function lowLevelFields(): INodeTypeDescription['properties'] {
 			name: 'autoZoomIntervalSeconds',
 			type: 'number',
 			default: 5,
+			description: 'Khoảng thời gian giữa các lần auto zoom, tính bằng giây.',
 			displayOptions: showForLowLevelTemplate(['portrait']),
 		},
 		{
@@ -680,6 +745,7 @@ function lowLevelFields(): INodeTypeDescription['properties'] {
 			name: 'secondVideoUri',
 			type: 'string',
 			default: '',
+			description: 'URL hoặc path của video thứ hai để ghép cạnh video chính.',
 			displayOptions: showForLowLevelTemplate(['hstack']),
 		},
 		{
@@ -687,6 +753,7 @@ function lowLevelFields(): INodeTypeDescription['properties'] {
 			name: 'hstackWidth',
 			type: 'number',
 			default: 1280,
+			description: 'Chiều rộng output khi ghép ngang hai video.',
 			displayOptions: showForLowLevelTemplate(['hstack']),
 		},
 		{
@@ -694,6 +761,7 @@ function lowLevelFields(): INodeTypeDescription['properties'] {
 			name: 'hstackHeight',
 			type: 'number',
 			default: 720,
+			description: 'Chiều cao output khi ghép ngang hai video.',
 			displayOptions: showForLowLevelTemplate(['hstack']),
 		},
 		{
@@ -701,6 +769,7 @@ function lowLevelFields(): INodeTypeDescription['properties'] {
 			name: 'brollVideoUri',
 			type: 'string',
 			default: '',
+			description: 'URL hoặc path của video B-roll dùng trong bố cục split screen.',
 			displayOptions: showForLowLevelTemplate(['splitScreen']),
 		},
 		{
@@ -708,6 +777,7 @@ function lowLevelFields(): INodeTypeDescription['properties'] {
 			name: 'splitRatio',
 			type: 'number',
 			default: 0.5,
+			description: 'Tỷ lệ chia màn hình giữa video chính và B-roll.',
 			displayOptions: showForLowLevelTemplate(['splitScreen']),
 		},
 		{
@@ -720,6 +790,7 @@ function lowLevelFields(): INodeTypeDescription['properties'] {
 				{ name: 'Mix', value: 'mix' },
 			],
 			default: 'mix',
+			description: 'Chọn nguồn âm thanh khi ghép split screen.',
 			displayOptions: showForLowLevelTemplate(['splitScreen']),
 		},
 		{
@@ -727,6 +798,7 @@ function lowLevelFields(): INodeTypeDescription['properties'] {
 			name: 'semitones',
 			type: 'number',
 			default: 2,
+			description: 'Số bán cung dùng cho thao tác đổi pitch âm thanh.',
 			displayOptions: showForLowLevelTemplate(['audioOps']),
 		},
 		{
@@ -734,6 +806,7 @@ function lowLevelFields(): INodeTypeDescription['properties'] {
 			name: 'fadeDuration',
 			type: 'number',
 			default: 0.5,
+			description: 'Thời lượng fade in/out âm thanh, tính bằng giây.',
 			displayOptions: showForLowLevelTemplate(['audioOps']),
 		},
 		{
@@ -741,6 +814,7 @@ function lowLevelFields(): INodeTypeDescription['properties'] {
 			name: 'volume',
 			type: 'number',
 			default: 0.9,
+			description: 'Hệ số âm lượng đầu ra, ví dụ 1.0 giữ nguyên, 0.9 giảm nhẹ.',
 			displayOptions: showForLowLevelTemplate(['audioOps']),
 		},
 		{
@@ -748,7 +822,7 @@ function lowLevelFields(): INodeTypeDescription['properties'] {
 			name: 'operationsJson',
 			type: 'json',
 			default: '{\n  "operations": [\n    {"type": "cut", "params": {"start": 0, "duration": 5}}\n  ]\n}',
-			description: 'JSON object with an operations array',
+			description: 'JSON object có mảng operations để gửi trực tiếp vào low_level pipeline.',
 			displayOptions: showForLowLevelTemplate(['customJson']),
 		},
 	];
@@ -761,6 +835,7 @@ function dubbingFields(): INodeTypeDescription['properties'] {
 			name: 'sourceLanguage',
 			type: 'string',
 			default: 'auto',
+			description: 'Ngôn ngữ gốc của video. Dùng auto nếu muốn backend tự nhận diện.',
 			displayOptions: showFor('preset', ['dubbing']),
 		},
 		{
@@ -768,6 +843,7 @@ function dubbingFields(): INodeTypeDescription['properties'] {
 			name: 'targetLanguage',
 			type: 'string',
 			default: 'vi',
+			description: 'Ngôn ngữ muốn lồng tiếng đầu ra, ví dụ vi, en, ja.',
 			displayOptions: showFor('preset', ['dubbing']),
 		},
 		{
@@ -780,6 +856,7 @@ function dubbingFields(): INodeTypeDescription['properties'] {
 				{ name: 'LibreTranslate', value: 'libretranslate' },
 			],
 			default: 'google',
+			description: 'Dịch vụ dịch văn bản dùng trước khi tạo giọng đọc.',
 			displayOptions: showFor('preset', ['dubbing']),
 		},
 		{
@@ -787,6 +864,7 @@ function dubbingFields(): INodeTypeDescription['properties'] {
 			name: 'ttsVoice',
 			type: 'string',
 			default: 'vi-VN-HoaiMyNeural',
+			description: 'Tên giọng TTS dùng để đọc bản dịch.',
 			displayOptions: showFor('preset', ['dubbing']),
 		},
 		{
@@ -794,6 +872,7 @@ function dubbingFields(): INodeTypeDescription['properties'] {
 			name: 'ttsRate',
 			type: 'string',
 			default: '-5%',
+			description: 'Tốc độ đọc của TTS, ví dụ -5% để chậm hơn một chút.',
 			displayOptions: showFor('preset', ['dubbing']),
 		},
 	];
@@ -806,6 +885,7 @@ function subtitleFields(): INodeTypeDescription['properties'] {
 			name: 'subtitleLanguage',
 			type: 'string',
 			default: 'auto',
+			description: 'Ngôn ngữ phụ đề. Dùng auto nếu muốn backend tự nhận diện.',
 			displayOptions: showFor('preset', ['subtitle']),
 		},
 		{
@@ -813,6 +893,7 @@ function subtitleFields(): INodeTypeDescription['properties'] {
 			name: 'burnSubtitle',
 			type: 'boolean',
 			default: true,
+			description: 'Bật để đóng cứng phụ đề lên video; tắt nếu chỉ muốn tạo artifact phụ đề.',
 			displayOptions: showFor('preset', ['subtitle']),
 		},
 		{
@@ -820,6 +901,7 @@ function subtitleFields(): INodeTypeDescription['properties'] {
 			name: 'fontSize',
 			type: 'number',
 			default: 28,
+			description: 'Cỡ chữ phụ đề khi burn lên video.',
 			displayOptions: showFor('preset', ['subtitle']),
 		},
 		{
@@ -827,6 +909,7 @@ function subtitleFields(): INodeTypeDescription['properties'] {
 			name: 'fontColor',
 			type: 'string',
 			default: 'white',
+			description: 'Màu chữ phụ đề, ví dụ white hoặc #ffffff.',
 			displayOptions: showFor('preset', ['subtitle']),
 		},
 		{
@@ -834,6 +917,7 @@ function subtitleFields(): INodeTypeDescription['properties'] {
 			name: 'strokeColor',
 			type: 'string',
 			default: 'black',
+			description: 'Màu viền chữ phụ đề để dễ đọc trên nền video.',
 			displayOptions: showFor('preset', ['subtitle']),
 		},
 		{
@@ -841,6 +925,7 @@ function subtitleFields(): INodeTypeDescription['properties'] {
 			name: 'strokeWidth',
 			type: 'number',
 			default: 2,
+			description: 'Độ dày viền chữ phụ đề.',
 			displayOptions: showFor('preset', ['subtitle']),
 		},
 	];
@@ -853,6 +938,7 @@ function silenceCutFields(): INodeTypeDescription['properties'] {
 			name: 'minSilenceDuration',
 			type: 'number',
 			default: 0.3,
+			description: 'Khoảng im lặng tối thiểu để bị cắt, tính bằng giây.',
 			displayOptions: showFor('preset', ['silenceCut']),
 		},
 		{
@@ -860,6 +946,7 @@ function silenceCutFields(): INodeTypeDescription['properties'] {
 			name: 'silenceThresholdDb',
 			type: 'number',
 			default: -35,
+			description: 'Ngưỡng âm lượng dB để xem là im lặng. Giá trị càng thấp càng ít cắt.',
 			displayOptions: showFor('preset', ['silenceCut']),
 		},
 	];
@@ -877,6 +964,7 @@ function extractFields(): INodeTypeDescription['properties'] {
 				{ name: 'M4A', value: 'm4a' },
 			],
 			default: 'wav',
+			description: 'Định dạng file audio đầu ra.',
 			displayOptions: showFor('preset', ['extractAudio']),
 		},
 		{
@@ -884,6 +972,7 @@ function extractFields(): INodeTypeDescription['properties'] {
 			name: 'sampleRate',
 			type: 'number',
 			default: 44100,
+			description: 'Sample rate audio đầu ra, ví dụ 44100 hoặc 48000.',
 			displayOptions: showFor('preset', ['extractAudio']),
 		},
 		{
@@ -891,6 +980,7 @@ function extractFields(): INodeTypeDescription['properties'] {
 			name: 'fps',
 			type: 'number',
 			default: 1,
+			description: 'Số frame ảnh trích xuất mỗi giây.',
 			displayOptions: showFor('preset', ['extractFrames']),
 		},
 		{
@@ -903,6 +993,7 @@ function extractFields(): INodeTypeDescription['properties'] {
 				{ name: 'WEBP', value: 'webp' },
 			],
 			default: 'jpg',
+			description: 'Định dạng ảnh frame đầu ra.',
 			displayOptions: showFor('preset', ['extractFrames']),
 		},
 		{
@@ -910,7 +1001,89 @@ function extractFields(): INodeTypeDescription['properties'] {
 			name: 'maxFrames',
 			type: 'number',
 			default: 10,
+			description: 'Số frame tối đa cần trích xuất để tránh tạo quá nhiều artifact.',
 			displayOptions: showFor('preset', ['extractFrames']),
+		},
+	];
+}
+
+function splitVideoFields(): INodeTypeDescription['properties'] {
+	return [
+		{
+			displayName: 'Chế độ chia',
+			name: 'splitMode',
+			type: 'options',
+			options: [
+				{
+					name: 'Tự động — Chia đều theo thời lượng',
+					value: 'auto',
+					description: 'Chia video thành các đoạn bằng nhau theo số giây mỗi đoạn.',
+				},
+				{
+					name: 'Tùy chỉnh — Tự định mốc cắt',
+					value: 'custom',
+					description: 'Tự xác định từng đoạn bằng JSON array với thời điểm start và end.',
+				},
+			],
+			default: 'auto',
+			description: 'Chọn cách chia clip: tự động chia đều hoặc tự định từng mốc cắt.',
+			displayOptions: showFor('preset', ['splitVideo']),
+		},
+		{
+			displayName: 'Thời lượng mỗi đoạn (giây)',
+			name: 'segmentSeconds',
+			type: 'number',
+			default: 30,
+			description: 'Mỗi clip con dài bao nhiêu giây. Video sẽ được chia thành các đoạn bằng nhau.',
+			displayOptions: {
+				show: {
+					resource: ['preset'],
+					presetOperation: ['splitVideo'],
+					splitMode: ['auto'],
+				},
+			},
+		},
+		{
+			displayName: 'Bắt đầu từ (giây) — tùy chọn',
+			name: 'splitStart',
+			type: 'number',
+			default: 0,
+			description: 'Bắt đầu chia từ giây này trong video gốc. Để 0 nếu muốn chia từ đầu.',
+			displayOptions: {
+				show: {
+					resource: ['preset'],
+					presetOperation: ['splitVideo'],
+					splitMode: ['auto'],
+				},
+			},
+		},
+		{
+			displayName: 'Kết thúc ở (giây) — tùy chọn',
+			name: 'splitEnd',
+			type: 'number',
+			default: 0,
+			description: 'Dừng chia ở giây này trong video gốc. Để 0 nếu muốn chia đến hết video.',
+			displayOptions: {
+				show: {
+					resource: ['preset'],
+					presetOperation: ['splitVideo'],
+					splitMode: ['auto'],
+				},
+			},
+		},
+		{
+			displayName: 'Danh sách đoạn cắt (JSON)',
+			name: 'segmentsJson',
+			type: 'json',
+			default: '[\n  { "start": 0, "end": 10 },\n  { "start": 15, "end": 30 },\n  { "start": 45, "duration": 20 }\n]',
+			description: 'Danh sách các đoạn cắt dưới dạng JSON array. Mỗi phần tử cần có "start" và "end" hoặc "duration" (tính bằng giây).',
+			displayOptions: {
+				show: {
+					resource: ['preset'],
+					presetOperation: ['splitVideo'],
+					splitMode: ['custom'],
+				},
+			},
 		},
 	];
 }
@@ -926,13 +1099,14 @@ function commonJobOptions(resource: string, operations: string[]): INodeTypeDesc
 				minValue: 0,
 			},
 			displayOptions: showFor(resource, operations),
+			description: 'Độ ưu tiên job. Số lớn hơn có thể được backend xử lý trước tùy cấu hình hàng đợi.',
 		},
 		{
 			displayName: 'Metadata JSON',
 			name: 'metadataJson',
 			type: 'json',
 			default: '{}',
-			description: 'Optional job metadata JSON object',
+			description: 'Metadata JSON tùy chọn gắn vào job để truy vết workflow, case test hoặc thông tin người dùng.',
 			displayOptions: showFor(resource, operations),
 		},
 		{
@@ -940,7 +1114,7 @@ function commonJobOptions(resource: string, operations: string[]): INodeTypeDesc
 			name: 'advancedPayloadJson',
 			type: 'json',
 			default: '{}',
-			description: 'JSON object merged into the generated payload. Values here override preset fields.',
+			description: 'JSON object merge vào payload đã tạo. Giá trị ở đây sẽ override field preset khi cần cấu hình nâng cao.',
 			displayOptions: showFor(resource, operations),
 		},
 	];
@@ -953,7 +1127,7 @@ function waitFields(resource: string): INodeTypeDescription['properties'] {
 			name: 'intervalSeconds',
 			type: 'number',
 			default: 15,
-			description: 'Polling keeps the n8n execution worker occupied. Use a webhook trigger for long renders.',
+			description: 'Số giây giữa mỗi lần polling. Polling giữ worker n8n, nên dùng Trigger cho render dài.',
 			displayOptions: showFor(resource, ['wait']),
 		},
 		{
@@ -961,7 +1135,7 @@ function waitFields(resource: string): INodeTypeDescription['properties'] {
 			name: 'timeoutSeconds',
 			type: 'number',
 			default: 900,
-			description: 'Maximum time to wait for the job to reach done, failed, or cancelled',
+			description: 'Thời gian chờ tối đa để job chuyển sang done, failed hoặc cancelled.',
 			displayOptions: showFor(resource, ['wait']),
 		},
 		{
@@ -969,6 +1143,7 @@ function waitFields(resource: string): INodeTypeDescription['properties'] {
 			name: 'failOnTerminalError',
 			type: 'boolean',
 			default: true,
+			description: 'Bật để node fail khi job kết thúc ở trạng thái failed hoặc cancelled.',
 			displayOptions: showFor(resource, ['wait']),
 		},
 	];
@@ -984,16 +1159,16 @@ function outputFields(): INodeTypeDescription['properties'] {
 				{
 					name: 'Job',
 					value: 'job',
-					description: 'Return the normalized job response',
+					description: 'Trả về một item chứa job đã được normalize.',
 				},
 				{
 					name: 'Result Items',
 					value: 'resultItems',
-					description: 'Return one n8n item per metadata.result_items entry when available',
+					description: 'Trả về một item cho mỗi artifact trong metadata.result_items nếu có.',
 				},
 			],
 			default: 'job',
-			description: 'Binary result download is not available in V1 because the backend has no public output route yet.',
+			description: 'Chọn cách trả output cho node sau. V1 chưa tải binary trực tiếp vì backend chưa có public output route.',
 		},
 	];
 }

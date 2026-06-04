@@ -40,3 +40,19 @@ class JobRecordTests(unittest.TestCase):
         self.assertIsNotNone(restored.error_detail)
         self.assertEqual(restored.error_detail.code, JobErrorCode.TTS_FAILED.value)
         self.assertEqual(restored.error_detail.step, "tts")
+
+    def test_job_error_taxonomy_fields_round_trip(self) -> None:
+        error = JobError(
+            code=JobErrorCode.UNKNOWN_OPERATION.value,
+            message="unsupported operation 'unknown_op'",
+            retriable=False,
+            stage="build_workflow",
+            operation="unknown_op",
+        )
+
+        restored = JobError.from_dict(error.to_dict())
+
+        self.assertEqual(restored.code, JobErrorCode.UNKNOWN_OPERATION.value)
+        self.assertEqual(restored.stage, "build_workflow")
+        self.assertEqual(restored.operation, "unknown_op")
+        self.assertFalse(restored.retriable)

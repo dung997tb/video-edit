@@ -60,7 +60,7 @@ class FileManager:
         temp_root = self.job_temp_dir.resolve()
         output_root = self.job_output_dir.resolve()
         if candidate.is_relative_to(temp_root):
-            return "temp", str(candidate.relative_to(temp_root))
+            return "temp", candidate.relative_to(temp_root).as_posix()
         if candidate.is_relative_to(output_root):
-            return "output", str(candidate.relative_to(output_root))
+            return "output", candidate.relative_to(output_root).as_posix()
         raise ValueError(f"path {candidate} is outside job roots")

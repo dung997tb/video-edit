@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import threading
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable
@@ -46,21 +47,23 @@ class PipelineRunner:
         self.services = services
 
     def run_job(self, job: JobRecord) -> PipelineContext:
-        context = self._build_context(job)
-        workflow = self._build_workflow(job)
-        total_steps = len(workflow.nodes)
         worker_id = self.services.settings.resolved_worker_id
+        context: PipelineContext | None = None
         active_step = None
         stop_event = threading.Event()
-        heartbeat = LeaseHeartbeat(
-            services=self.services,
-            job_id=job.id,
-            worker_id=worker_id,
-            stop_event=stop_event,
-        )
-        heartbeat_thread = threading.Thread(target=heartbeat.run, daemon=True)
-        heartbeat_thread.start()
+        heartbeat_thread: threading.Thread | None = None
         try:
+            context = self._build_context(job)
+            workflow = self._build_workflow(job)
+            total_steps = len(workflow.nodes)
+            heartbeat = LeaseHeartbeat(
+                services=self.services,
+                job_id=job.id,
+                worker_id=worker_id,
+                stop_event=stop_event,
+            )
+            heartbeat_thread = threading.Thread(target=heartbeat.run, daemon=True)
+            heartbeat_thread.start()
             self.services.job_manager.heartbeat(
                 job.id,
                 worker_id,
@@ -130,7 +133,7 @@ class PipelineRunner:
                     step=active_step,
                     retriable=False,
                 ),
-                metadata=context.metadata,
+                metadata=context.metadata if context is not None else dict(job.metadata),
                 worker_id=worker_id,
             )
             raise
@@ -140,13 +143,14 @@ class PipelineRunner:
                 str(exc),
                 cancelled=False,
                 error_detail=self._build_error_detail(exc, active_step),
-                metadata=context.metadata,
+                metadata=context.metadata if context is not None else dict(job.metadata),
                 worker_id=worker_id,
             )
             raise
         finally:
             stop_event.set()
-            heartbeat_thread.join(timeout=1)
+            if heartbeat_thread is not None:
+                heartbeat_thread.join(timeout=1)
 
     def _build_workflow(self, job: JobRecord) -> WorkflowSpec:
         built = self.services.pipeline_builders[job.pipeline_type](job, self.services)
@@ -308,14 +312,18 @@ class PipelineRunner:
 
     def _build_error_detail(self, exc: Exception, step_name: str | None) -> JobError:
         code = JobErrorCode.UNKNOWN.value
+        stage = "execution" if step_name else "build_workflow"
+        operation = None
         if isinstance(exc, WorkflowNodeError):
             code = exc.error_code or code
             step_name = exc.node_id
+            stage = "execution"
         if code == JobErrorCode.UNKNOWN.value:
             if isinstance(exc, FileNotFoundError):
                 code = JobErrorCode.INPUT_NOT_FOUND.value
             elif isinstance(exc, SubprocessExecutionError):
                 code = JobErrorCode.FFMPEG_FAILED.value
+                stage = "execution"
             elif step_name == "transcript":
                 code = JobErrorCode.TRANSCRIPTION_FAILED.value
             elif step_name == "translate":
@@ -324,11 +332,20 @@ class PipelineRunner:
                 code = JobErrorCode.TTS_FAILED.value
             elif step_name in {"synced_audio", "voice_sync_retry"}:
                 code = JobErrorCode.VOICE_SYNC_FAILED.value
+            elif isinstance(exc, ValueError):
+                match = re.search(r"unsupported (?:low_level )?operation '([^']*)'", str(exc), re.IGNORECASE)
+                if match:
+                    code = JobErrorCode.UNKNOWN_OPERATION.value
+                    operation = match.group(1)
+                else:
+                    code = JobErrorCode.BUILD_WORKFLOW_FAILED.value if step_name is None else JobErrorCode.INVALID_PARAMS.value
         return JobError(
             code=code,
             message=str(exc),
             step=step_name,
             retriable=not isinstance(exc, (FileNotFoundError, ValueError)),
+            stage=stage,
+            operation=operation,
         )
 
 

@@ -39,7 +39,11 @@ class JobResponse(BaseModel):
     log: str | None = None
     error: str | None = None
     error_detail: dict[str, Any] | None = None
+    retry_of_job_id: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
+    is_terminal: bool = False
+    can_cancel: bool = False
+    can_retry: bool = False
     created_at: datetime
     started_at: datetime | None = None
     finished_at: datetime | None = None

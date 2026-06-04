@@ -1,15 +1,17 @@
-# Hướng dẫn Custom Node n8n cho AI Video Engine
+# Hướng dẫn Custom Node n8n cho Mewocamm Video Editor
 
-Tài liệu này hướng dẫn cài đặt và sử dụng package `n8n-nodes-ai-video-engine`.
+Tài liệu này hướng dẫn cài đặt và dùng package `n8n-nodes-ai-video-engine` trong n8n.
 
-Package gồm 2 node:
+Package hiện có 2 node:
 
-- `AI Video Engine`: node thao tác chính để tạo job, upload file, lấy trạng thái, chờ kết quả, hủy job, và dùng preset pipeline.
-- `AI Video Engine Trigger`: webhook trigger để nhận callback `job.completed`, `job.failed`, `job.cancelled`.
+- **Mewocamm Video Editor**: node chính để tạo job, upload file, lấy trạng thái, chờ kết quả, hủy job và chạy các preset video.
+- **Mewocamm Video Editor Trigger**: webhook trigger để nhận callback `job.completed`, `job.failed`, `job.cancelled`.
+
+> Tương thích ngược: trước đây package hiển thị tên **AI Video Engine**. Internal node names vẫn là `aiVideoEngine`, `aiVideoEngineTrigger` và credential `aiVideoEngineApi` để workflow cũ tiếp tục chạy.
 
 ## 1. Điều kiện trước khi dùng
 
-AI Video Engine API cần chạy và truy cập được từ n8n.
+Backend Mewocamm Video Editor cần chạy và truy cập được từ n8n.
 
 Ví dụ local:
 
@@ -32,18 +34,13 @@ WEBHOOKS_ENABLED=true
 WEBHOOK_TIMEOUT_SECONDS=10
 ```
 
-Khi n8n và API chạy ở hai container hoặc hai máy khác nhau, không dùng `localhost` nếu nó trỏ sai container. Hãy dùng hostname Docker network, private IP, hoặc domain HTTPS thật.
+Khi n8n chạy Docker còn API chạy native trên host, Base URL trong credential nên là:
+
+```text
+http://host.docker.internal:6666
+```
 
 ## 2. Cài đặt
-
-### Cài từ npm community node
-
-Trong n8n self-hosted:
-
-1. Vào `Settings` -> `Community Nodes`.
-2. Chọn `Install`.
-3. Nhập `n8n-nodes-ai-video-engine`.
-4. Cài đặt và restart n8n nếu n8n yêu cầu.
 
 ### Cài local để phát triển
 
@@ -76,26 +73,24 @@ Sau đó restart n8n.
 
 ### Docker/self-hosted
 
-Với n8n Docker, cách ổn định nhất là cài community node trong UI. Nếu build image riêng, cài package vào thư mục custom của n8n rồi restart container.
+Với n8n Docker trong dev, có thể copy package đã build vào container rồi restart:
 
-Ví dụ ý tưởng:
-
-```Dockerfile
-FROM n8nio/n8n:latest
-USER node
-RUN mkdir -p /home/node/.n8n/custom
-WORKDIR /home/node/.n8n/custom
-RUN npm install n8n-nodes-ai-video-engine
+```powershell
+docker exec n8n mkdir -p /home/node/.n8n/nodes/node_modules
+docker cp ./n8n-nodes-ai-video-engine n8n:/home/node/.n8n/nodes/node_modules/n8n-nodes-ai-video-engine
+docker restart n8n
 ```
+
+Khi publish npm chính thức, nên cài qua UI `Settings -> Community Nodes`.
 
 ## 3. Tạo credential
 
-Tạo credential loại `AI Video Engine API`.
+Tạo credential loại **Mewocamm Video Editor API**.
 
 | Trường | Giá trị ví dụ | Ghi chú |
 |---|---|---|
-| Base URL | `http://localhost:6666` | URL của FastAPI service |
-| Authentication Type | `X-API-Key` | Hoặc `Bearer` |
+| Base URL | `http://host.docker.internal:6666` | URL backend Mewocamm từ n8n |
+| Authentication Type | `X-API-Key Header` | Hoặc `Bearer Token` |
 | API Key | `your-secret-key` | Khớp `API_SECRET_KEY` |
 
 Credential test gọi:
@@ -104,9 +99,11 @@ Credential test gọi:
 GET /jobs?limit=1
 ```
 
-Vì đây là endpoint protected, nếu credential test pass thì các operation chính cũng có thể xác thực.
+Nếu test pass, các operation chính có thể xác thực.
 
-## 4. Node AI Video Engine
+## 4. Node Mewocamm Video Editor
+
+Node này dùng khi workflow cần gọi API xử lý video.
 
 ### Resource: Job
 
@@ -114,14 +111,13 @@ Vì đây là endpoint protected, nếu credential test pass thì các operation
 
 Dùng khi bạn muốn tự viết payload pipeline.
 
-Trường quan trọng:
+Input quan trọng:
 
-- `Pipeline Type`: ví dụ `low_level`, `dubbing`, `subtitle`, `silence_cut`, `audio-extract`, `extract_frames`
-- `Source Mode`: `Input URI` hoặc `Source Key`
-- `Payload JSON`: payload gửi vào API
-- `Advanced Payload JSON`: merge đè lên payload
-- `Metadata JSON`: metadata job
-- `Priority`: độ ưu tiên job
+- `Pipeline Type`: ví dụ `low_level`, `dubbing`, `subtitle`, `silence_cut`, `audio-extract`, `extract_frames`.
+- `Source Mode`: chọn `Input URI` hoặc `Source Key`.
+- `Payload JSON`: cấu hình xử lý video gửi vào backend.
+- `Advanced Payload JSON`: merge thêm field nâng cao vào payload.
+- `Metadata JSON`: thông tin truy vết workflow/test/user.
 
 Ví dụ payload:
 
@@ -134,24 +130,19 @@ Ví dụ payload:
 }
 ```
 
+Output trả về job đã normalize, gồm `job_id`, `status`, `output_path`, `result_items`, `error`, `error_detail`.
+
 #### Upload And Create
 
-Dùng khi node trước đó có binary data, ví dụ tải file từ URL hoặc nhận file qua form.
+Dùng khi node trước đó có binary data, ví dụ nhận file từ form hoặc tải file từ URL.
 
-Trường quan trọng:
+Input quan trọng:
 
-- `Binary Property`: mặc định `data`
-- `Pipeline Type`
-- `Payload JSON`
+- `Binary Property`: tên binary property chứa file, mặc định `data`.
+- `Pipeline Type`.
+- `Payload JSON`.
 
-Node gửi multipart form:
-
-- `file`
-- `pipeline_type`
-- `payload_json`
-- `metadata_json`
-
-API sẽ lưu file vào artifact store và thêm `source_key` vào payload.
+Node gửi multipart form tới `/jobs/upload`.
 
 #### Get
 
@@ -181,107 +172,89 @@ POST /jobs/{job_id}/cancel
 
 #### Wait
 
-Poll job cho đến khi trạng thái là:
+Poll job cho đến khi trạng thái là `done`, `failed` hoặc `cancelled`.
 
-- `done`
-- `failed`
-- `cancelled`
+Input quan trọng:
 
-Mặc định:
+- `Poll Interval Seconds`: số giây giữa mỗi lần kiểm tra.
+- `Timeout Seconds`: thời gian chờ tối đa.
+- `Fail on Failed or Cancelled`: bật để workflow fail khi job lỗi/bị hủy.
 
-- `Poll Interval Seconds`: `15`
-- `Timeout Seconds`: `900`
-- `Fail on Failed or Cancelled`: bật
-
-Lưu ý: polling giữ execution worker của n8n trong lúc chờ. Với video dài 15-30 phút, nên dùng webhook trigger thay vì Wait.
+Lưu ý: polling giữ execution worker của n8n. Với render dài, nên dùng **Mewocamm Video Editor Trigger**.
 
 ### Resource: Preset Pipeline
 
 #### Low Level Edit
 
-Các template có sẵn:
+Dùng cho cắt ghép cơ bản và thao tác FFmpeg.
 
-- `Cut And Scale`
-- `Portrait Reframe`
-- `Split Screen HStack`
-- `Split Screen`
-- `Audio Operations`
-- `Custom JSON`
+Template có sẵn:
 
-`Custom JSON` cần object có mảng `operations`.
-
-```json
-{
-  "operations": [
-    {"type": "cut", "params": {"start": 0, "duration": 5}},
-    {"type": "flip", "params": {"mode": "horizontal"}}
-  ]
-}
-```
+- `Cut And Scale`: cắt đoạn video rồi scale.
+- `Portrait Reframe`: đổi sang khung dọc.
+- `Split Screen HStack`: ghép hai video cạnh nhau.
+- `Split Screen`: ghép video chính và B-roll.
+- `Audio Operations`: thao tác pitch/fade/volume mẫu.
+- `Custom JSON`: tự viết mảng `operations`.
 
 #### Dubbing
 
-Tạo job `dubbing`.
+Dùng để lồng tiếng/dịch giọng.
 
-Trường chính:
+Input chính:
 
-- `Source Language`
-- `Target Language`
-- `Translator Service`
-- `TTS Voice`
-- `TTS Rate`
-- `Webhook URL`
-
-Ví dụ giọng Việt:
-
-```text
-vi-VN-HoaiMyNeural
-```
+- `Source Language`: ngôn ngữ gốc, có thể dùng `auto`.
+- `Target Language`: ngôn ngữ đầu ra, ví dụ `vi`.
+- `Translator Service`: dịch vụ dịch.
+- `TTS Voice`: giọng đọc.
+- `TTS Rate`: tốc độ đọc.
 
 #### Subtitle
 
-Tạo job `subtitle`.
+Dùng để tạo phụ đề hoặc burn phụ đề vào video.
 
-Trường chính:
+Input chính:
 
-- `Language`
-- `Burn Subtitle`
-- `Font Size`
-- `Font Color`
-- `Stroke Color`
-- `Stroke Width`
+- `Language`: ngôn ngữ phụ đề, có thể dùng `auto`.
+- `Burn Subtitle`: bật để đóng cứng phụ đề lên video.
+- `Font Size`, `Font Color`, `Stroke Color`, `Stroke Width`: style phụ đề.
 
 #### Silence Cut
 
-Tạo job `silence_cut`.
+Dùng để cắt đoạn im lặng.
 
-Trường chính:
+Input chính:
 
-- `Minimum Silence Duration`
-- `Silence Threshold DB`
+- `Minimum Silence Duration`: khoảng im lặng tối thiểu.
+- `Silence Threshold DB`: ngưỡng âm lượng để xem là im lặng.
 
 #### Extract Audio
 
-Tạo job `audio-extract`.
+Dùng để tách audio từ video.
 
-Trường chính:
+Input chính:
 
-- `Audio Format`: `wav`, `mp3`, `m4a`
-- `Sample Rate`
+- `Audio Format`: `wav`, `mp3`, `m4a`.
+- `Sample Rate`: ví dụ `44100`.
 
 #### Extract Frames
 
-Tạo job `extract_frames`.
+Dùng để trích xuất frame ảnh.
 
-Trường chính:
+Input chính:
 
-- `FPS`
-- `Image Format`
-- `Max Frames`
+- `FPS`: số frame mỗi giây.
+- `Image Format`: `jpg`, `png`, `webp`.
+- `Max Frames`: giới hạn số frame.
 
-## 5. Node AI Video Engine Trigger
+## 5. Node Mewocamm Video Editor Trigger
 
-Trigger tạo một webhook URL trong n8n. Dùng URL này làm `webhook_url` trong payload job.
+Node này dùng để nhận callback từ backend thay vì polling.
+
+Input:
+
+- `Path`: đường dẫn webhook, mặc định `mewocamm-video-callback`.
+- `Events`: chọn event được phép kích hoạt workflow.
 
 Events hỗ trợ:
 
@@ -289,157 +262,65 @@ Events hỗ trợ:
 - `job.failed`
 - `job.cancelled`
 
-Output chuẩn:
+Workflow gợi ý:
+
+1. Tạo workflow bắt đầu bằng **Mewocamm Video Editor Trigger**.
+2. Copy production webhook URL.
+3. Khi tạo job, truyền URL đó vào `payload.webhook_url`.
+4. Backend gọi lại n8n khi job kết thúc.
+
+## 6. Output Mode
+
+`Output Mode = Job` trả về một item chứa job:
 
 ```json
 {
-  "event": "job.completed",
-  "job_id": "JOB_ID",
+  "job_id": "job-123",
   "status": "done",
-  "output_path": "output/job/final.mp4",
-  "result_items": [],
-  "error": null,
-  "error_detail": null
+  "output_path": "output/demo/final.mp4",
+  "result_items": []
 }
 ```
 
-## 6. Workflow mẫu
+`Output Mode = Result Items` trả về một item cho mỗi artifact trong `metadata.result_items[]`.
 
-### Upload file -> tạo job -> chờ done
+V1 chưa tải binary trực tiếp vì backend chưa có public output route/signed URL.
 
-1. `HTTP Request` tải video, bật response binary.
-2. `AI Video Engine`
-   - Resource: `Job`
-   - Operation: `Upload And Create`
-   - Binary Property: `data`
-   - Pipeline Type: `low_level`
-   - Payload JSON:
+## 7. Test nhanh trong n8n
+
+Search trong palette:
+
+- `Mewocamm`
+- `AI Video Engine`
+- `lồng tiếng`
+- `phụ đề`
+- `cắt video`
+
+Các từ khóa trên đều phải tìm được node nhờ alias.
+
+Workflow smoke:
+
+```text
+Manual Trigger -> Mewocamm Video Editor (Create Custom) -> Mewocamm Video Editor (Wait)
+```
+
+Payload smoke:
 
 ```json
 {
   "operations": [
     {"type": "cut", "params": {"start": 0, "duration": 5}}
-  ]
+  ],
+  "output_name": "n8n_smoke_cut_5s"
 }
 ```
 
-3. `AI Video Engine`
-   - Resource: `Job`
-   - Operation: `Wait`
-   - Job ID: `{{$json.job_id}}`
+## 8. Kiểm tra package trước khi release
 
-### Low-level edit từ URL
-
-1. `AI Video Engine`
-   - Resource: `Preset Pipeline`
-   - Operation: `Low Level Edit`
-   - Source Mode: `Input URI`
-   - Input URI: `{{$json.video_url}}`
-   - Operation Template: `Cut And Scale`
-
-2. Tùy nhu cầu, thêm node `Wait`.
-
-### Dubbing bằng webhook
-
-1. `AI Video Engine Trigger`
-   - Path: `ai-video-engine-callback`
-   - Events: chọn cả 3 event.
-
-2. Copy production webhook URL của trigger.
-
-3. Trong workflow tạo job:
-   - `AI Video Engine`
-   - Resource: `Preset Pipeline`
-   - Operation: `Dubbing`
-   - Webhook URL: URL vừa copy
-
-Khi backend render xong, workflow trigger sẽ chạy.
-
-### Subtitle
-
-`AI Video Engine`:
-
-- Resource: `Preset Pipeline`
-- Operation: `Subtitle`
-- Language: `auto`
-- Burn Subtitle: bật
-
-### Extract Frames
-
-`AI Video Engine`:
-
-- Resource: `Preset Pipeline`
-- Operation: `Extract Frames`
-- FPS: `1`
-- Image Format: `jpg`
-- Max Frames: `10`
-
-## 7. Output và file kết quả
-
-V1 trả về:
-
-- `output_path`
-- `metadata.result_items`
-- `result_items`
-
-Chưa tải file kết quả về binary data trong n8n vì backend hiện chưa có route public download hoặc signed URL.
-
-Để hỗ trợ use-case "render video -> upload YouTube/Google Drive/TikTok", backend nên thêm một trong hai cách:
-
-- route tải file như `GET /outputs/{job_id}/{filename}`
-- signed artifact URL trong `result_items`
-
-Khi đó node có thể thêm tùy chọn `Download Result to Binary Property`.
-
-## 8. Troubleshooting
-
-### Credential test báo 401
-
-Kiểm tra:
-
-- `API_AUTH_ENABLED=true`
-- `API_SECRET_KEY` đúng
-- Credential chọn đúng `X-API-Key` hoặc `Bearer`
-
-### Lỗi 400 unsupported pipeline_type
-
-Kiểm tra `Pipeline Type`. Các tên phổ biến:
-
-- `low_level`
-- `dubbing`
-- `subtitle`
-- `silence_cut`
-- `audio-extract`
-- `extract_frames`
-
-### Lỗi 413 khi upload
-
-File vượt `API_UPLOAD_MAX_BYTES`. Tăng biến môi trường backend:
-
-```env
-API_UPLOAD_MAX_BYTES=536870912
+```bash
+cd n8n-nodes-ai-video-engine
+npm run build
+npm run lint
+npm test
+npm pack --dry-run
 ```
-
-### Lỗi 429 rate limit
-
-Giảm tần suất polling hoặc tăng:
-
-```env
-API_RATE_LIMIT_PER_MINUTE=200
-```
-
-Với workflow dài, dùng webhook thay vì Wait.
-
-### Callback không tới n8n
-
-Kiểm tra:
-
-- `WEBHOOKS_ENABLED=true`
-- URL webhook là production URL, không phải test URL hết hạn
-- API server truy cập được domain n8n
-- reverse proxy cho phép POST body JSON
-- nếu chạy Docker, không dùng `localhost` sai container
-
-### Wait bị timeout
-
-Tăng `Timeout Seconds`, hoặc dùng webhook trigger cho render dài.

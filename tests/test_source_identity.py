@@ -22,6 +22,18 @@ class SourceIdentityTests(unittest.TestCase):
 
         self.assertEqual(resolved, sha256_bytes(b"video-bytes"))
 
+    def test_resolve_source_sha256_rejects_invalid_source_key(self) -> None:
+        artifact_store = LocalArtifactStore(make_test_root("source-identity-invalid-key") / "artifacts")
+
+        for source_key in ("../secret.mp4", "C:/secret.mp4", "uploads\\secret.mp4"):
+            with self.subTest(source_key=source_key):
+                with self.assertRaises(ValueError):
+                    resolve_source_sha256(
+                        source_sha256=None,
+                        source_key=source_key,
+                        artifact_store=artifact_store,
+                    )
+
     def test_resolve_source_sha256_derives_stable_hash_for_input_uri(self) -> None:
         uri = "https://example.com/demo.mp4"
 

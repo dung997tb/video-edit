@@ -1,5 +1,15 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="AI Video Engine">
-  <rect width="64" height="64" rx="14" fill="#1f6feb"/>
-  <path fill="#ffffff" d="M18 18h24a8 8 0 0 1 8 8v12a8 8 0 0 1-8 8H18a8 8 0 0 1-8-8V26a8 8 0 0 1 8-8Zm1 8v12l14-6-14-6Z"/>
-  <path fill="#8ee3ff" d="M45 14h4v6h-4v-6Zm-9-6h4v8h-4V8Zm-9 6h4v6h-4v-6Zm18 30h4v6h-4v-6Zm-9 4h4v8h-4v-8Zm-9-4h4v6h-4v-6Z"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Mewocamm Video Editor">
+  <defs>
+    <linearGradient id="mewocamm-bg" x1="8" y1="6" x2="58" y2="60" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#0f766e"/>
+      <stop offset="0.55" stop-color="#2563eb"/>
+      <stop offset="1" stop-color="#111827"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="14" fill="url(#mewocamm-bg)"/>
+  <path fill="#e0f2fe" d="M15 18h34a6 6 0 0 1 6 6v19a6 6 0 0 1-6 6H15a6 6 0 0 1-6-6V24a6 6 0 0 1 6-6Zm2 8v15h7V26h-7Zm13 0v15h17V26H30Z"/>
+  <path fill="#0f172a" d="M34 29.5v8l7-4-7-4Z"/>
+  <path fill="#99f6e4" d="M19 21h3v4h-3v-4Zm0 17h3v4h-3v-4Zm28-17h3v4h-3v-4Zm0 17h3v4h-3v-4Z"/>
+  <path fill="#f8fafc" d="M49 10l1.8 4.4 4.2 1.6-4.2 1.6L49 22l-1.8-4.4L43 16l4.2-1.6L49 10Z"/>
+  <path fill="#67e8f9" d="M39 8l1 2.3 2.3.9-2.3.9-1 2.3-1-2.3-2.3-.9 2.3-.9L39 8Z"/>
 </svg>

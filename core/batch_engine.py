@@ -56,7 +56,18 @@ class WorkerService:
             self._thread.join(timeout=timeout)
 
     def run_once(self) -> bool:
-        self.services.job_manager.release_stale_leases()
+        try:
+            self.services.job_manager.release_stale_leases(
+                max_attempts=int(getattr(self.services.settings, "max_job_attempts", 3)),
+            )
+        except TypeError:
+            self.services.job_manager.release_stale_leases()
+        fail_overlong = getattr(self.services.job_manager, "fail_overlong_jobs", None)
+        if fail_overlong is not None:
+            fail_overlong(max_duration_seconds=int(getattr(self.services.settings, "max_job_duration_seconds", 3600)))
+        retry_webhooks = getattr(self.services.job_manager, "retry_pending_webhooks", None)
+        if retry_webhooks is not None:
+            retry_webhooks(max_retries=int(getattr(self.services.settings, "webhook_max_retries", 3)))
         had_finished = self._collect_finished()
         available_slots = self.services.settings.max_workers - len(self._futures)
         if metrics.enabled:

@@ -1,5 +1,5 @@
 {
-  "name": "AI Video Engine - Low Level URL Wait",
+  "name": "Mewocamm Video Editor - Low Level URL Wait",
   "nodes": [
     {
       "parameters": {
@@ -22,7 +22,7 @@
       "credentials": {
         "aiVideoEngineApi": {
           "id": "REPLACE_WITH_CREDENTIAL_ID",
-          "name": "AI Video Engine API"
+          "name": "Mewocamm Video Editor API"
         }
       }
     },
@@ -44,7 +44,7 @@
       "credentials": {
         "aiVideoEngineApi": {
           "id": "REPLACE_WITH_CREDENTIAL_ID",
-          "name": "AI Video Engine API"
+          "name": "Mewocamm Video Editor API"
         }
       }
     }

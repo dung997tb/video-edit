@@ -10,7 +10,15 @@ from urllib.request import Request, urlopen
 
 from core.logger import logger
 from core.metrics import metrics
+from core.exceptions import IllegalStateTransition
 from core.models import JobError, JobRecord, JobStatus, utcnow
+
+
+def _assert_transition(record: JobRecord, target: JobStatus) -> None:
+    if not record.status.can_transition_to(target):
+        raise IllegalStateTransition(
+            f"Chuyển đổi trạng thái không hợp lệ cho Job {record.id}: {record.status.value} -> {target.value}"
+        )
 
 
 class JobRepository(ABC):
@@ -84,7 +92,19 @@ class JobRepository(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def release_stale_leases(self) -> int:
+    def release_stale_leases(self, *, max_attempts: int = 3) -> int:
+        raise NotImplementedError
+
+    @abstractmethod
+    def fail_overlong_jobs(self, *, max_duration_seconds: int = 3600) -> int:
+        raise NotImplementedError
+
+    @abstractmethod
+    def mark_webhook_attempt(self, job_id: str, *, success: bool, error: str | None = None) -> JobRecord | None:
+        raise NotImplementedError
+
+    @abstractmethod
+    def list_pending_webhooks(self, *, limit: int = 50, max_attempts: int = 3) -> list[JobRecord]:
         raise NotImplementedError
 
 
@@ -125,8 +145,7 @@ class InMemoryJobRepository(JobRepository):
             for record in records:
                 if record.cancel_requested:
                     continue
-                expired = record.lease_expires_at and record.lease_expires_at <= now
-                if record.status == JobStatus.PENDING or (record.status == JobStatus.RUNNING and expired):
+                if record.status == JobStatus.PENDING:
                     record.status = JobStatus.RUNNING
                     record.worker_id = worker_id
                     record.lease_expires_at = now + timedelta(seconds=lease_seconds)
@@ -142,6 +161,8 @@ class InMemoryJobRepository(JobRepository):
         with self._lock:
             record = self._records.get(job_id)
             if record is None or record.worker_id != worker_id:
+                return None
+            if record.status.is_terminal:  # Don't resurrect terminal jobs
                 return None
             record.status = JobStatus.RUNNING
             record.pid = pid if pid is not None else record.pid
@@ -194,6 +215,8 @@ class InMemoryJobRepository(JobRepository):
             record = self._records.get(job_id)
             if record is None:
                 return None
+            if record.status.is_terminal:  # Terminal freezes progress
+                return None
             if worker_id is not None and record.worker_id != worker_id:
                 return None
             record.step_index = step_index
@@ -215,8 +238,11 @@ class InMemoryJobRepository(JobRepository):
             record = self._records.get(job_id)
             if record is None:
                 return None
-            if worker_id is not None and record.worker_id != worker_id:
-                return None
+            _assert_transition(record, JobStatus.DONE)
+            if record.worker_id is not None and record.worker_id != worker_id:
+                raise IllegalStateTransition(
+                    f"Từ chối cập nhật Job {job_id}: worker_id '{worker_id}' không sở hữu job này (sở hữu hiện tại: '{record.worker_id}')"
+                )
             record.status = JobStatus.DONE
             record.output_path = output_path
             record.progress = 100
@@ -243,9 +269,13 @@ class InMemoryJobRepository(JobRepository):
             record = self._records.get(job_id)
             if record is None:
                 return None
-            if worker_id is not None and record.worker_id != worker_id:
-                return None
-            record.status = JobStatus.CANCELLED if cancelled else JobStatus.FAILED
+            target = JobStatus.CANCELLED if cancelled else JobStatus.FAILED
+            _assert_transition(record, target)
+            if record.worker_id is not None and record.worker_id != worker_id:
+                raise IllegalStateTransition(
+                    f"Từ chối cập nhật Job {job_id}: worker_id '{worker_id}' không sở hữu job này (sở hữu hiện tại: '{record.worker_id}')"
+                )
+            record.status = target
             record.error = error
             record.error_detail = _normalize_error_detail(error_detail)
             record.finished_at = utcnow()
@@ -257,7 +287,13 @@ class InMemoryJobRepository(JobRepository):
             record.updated_at = utcnow()
             return self._clone(record)
 
-    def release_stale_leases(self) -> int:
+    def release_stale_leases(self, *, max_attempts: int = 3) -> int:
+        """Handle jobs whose worker lease has expired.
+
+        RUNNING -> PENDING (retry) when attempt_count < max_attempts.
+        RUNNING -> FAILED/CANCELLED (terminal) otherwise.
+        This is the ONLY method allowed to perform RUNNING -> PENDING.
+        """
         now = utcnow()
         count = 0
         with self._lock:
@@ -267,11 +303,80 @@ class InMemoryJobRepository(JobRepository):
                     record.worker_id = None
                     record.lease_expires_at = None
                     record.pid = None
-                    record.status = JobStatus.CANCELLED if record.cancel_requested else JobStatus.PENDING
-                    record.updated_at = now
-                    if record.cancel_requested:
+                    if record.cancel_requested or record.attempt_count >= max_attempts:
+                        record.status = JobStatus.CANCELLED if record.cancel_requested else JobStatus.FAILED
                         record.finished_at = now
+                        if not record.cancel_requested:
+                            record.error_detail = JobError.max_attempts(max_attempts)
+                        record.error = record.error or (
+                            "cancelled" if record.cancel_requested
+                            else f"max attempts ({max_attempts}) exceeded"
+                        )
+                    else:
+                        record.status = JobStatus.PENDING
+                        record.progress = 0
+                    record.updated_at = now
         return count
+
+    def fail_overlong_jobs(self, *, max_duration_seconds: int = 3600) -> int:
+        """Force-fail jobs running longer than max duration, even with active heartbeat.
+
+        Separate concern from release_stale_leases: that handles dead workers,
+        this handles alive-but-stuck workers.
+        """
+        now = utcnow()
+        count = 0
+        with self._lock:
+            for record in self._records.values():
+                if (
+                    record.status == JobStatus.RUNNING
+                    and record.started_at
+                    and (now - record.started_at).total_seconds() >= max_duration_seconds
+                ):
+                    count += 1
+                    record.status = JobStatus.FAILED
+                    record.error = f"exceeded max duration ({max_duration_seconds}s)"
+                    record.error_detail = JobError(
+                        code="MAX_DURATION_EXCEEDED",
+                        message=record.error,
+                        retriable=False,
+                        stage="execution",
+                    )
+                    record.finished_at = now
+                    record.worker_id = None
+                    record.lease_expires_at = None
+                    record.pid = None
+                    record.updated_at = now
+        return count
+
+    def mark_webhook_attempt(self, job_id: str, *, success: bool, error: str | None = None) -> JobRecord | None:
+        with self._lock:
+            record = self._records.get(job_id)
+            if record is None:
+                return None
+            record.webhook_attempts += 1
+            if success:
+                record.terminal_notified = True
+                record.last_webhook_error = None
+            else:
+                record.last_webhook_error = error or "delivery failed"
+            record.updated_at = utcnow()
+            return self._clone(record)
+
+    def list_pending_webhooks(self, *, limit: int = 50, max_attempts: int = 3) -> list[JobRecord]:
+        with self._lock:
+            records = [
+                record
+                for record in self._records.values()
+                if (
+                    record.status.is_terminal
+                    and not record.terminal_notified
+                    and record.webhook_attempts < max_attempts
+                    and (record.metadata.get("webhook_url") or record.payload.get("webhook_url"))
+                )
+            ]
+            records.sort(key=lambda item: item.updated_at)
+            return [self._clone(record) for record in records[:limit] if record is not None]
 
 
 class SupabaseJobRepository(JobRepository):
@@ -322,6 +427,9 @@ class SupabaseJobRepository(JobRepository):
             )
             .eq("id", job_id)
             .eq("worker_id", worker_id)
+            .neq("status", JobStatus.DONE.value)
+            .neq("status", JobStatus.FAILED.value)
+            .neq("status", JobStatus.CANCELLED.value)
             .execute()
         )
         if not response.data:
@@ -414,6 +522,9 @@ class SupabaseJobRepository(JobRepository):
                 }
             )
             .eq("id", job_id)
+            .neq("status", JobStatus.DONE.value)
+            .neq("status", JobStatus.FAILED.value)
+            .neq("status", JobStatus.CANCELLED.value)
         )
         if worker_id is not None:
             query = query.eq("worker_id", worker_id)
@@ -430,6 +541,15 @@ class SupabaseJobRepository(JobRepository):
         *,
         worker_id: str | None = None,
     ) -> JobRecord | None:
+        record = self.get_job(job_id)
+        if record is None:
+            return None
+        _assert_transition(record, JobStatus.DONE)
+        if record.worker_id is not None and record.worker_id != worker_id:
+            raise IllegalStateTransition(
+                f"Từ chối cập nhật Job {job_id}: worker_id '{worker_id}' không sở hữu job này (sở hữu hiện tại: '{record.worker_id}')"
+            )
+
         payload: dict[str, Any] = {
             "status": JobStatus.DONE.value,
             "output_path": output_path,
@@ -442,7 +562,7 @@ class SupabaseJobRepository(JobRepository):
         }
         if metadata:
             payload["metadata"] = metadata
-        query = self.client.table(self.table).update(payload).eq("id", job_id)
+        query = self.client.table(self.table).update(payload).eq("id", job_id).eq("status", JobStatus.RUNNING.value)
         if worker_id is not None:
             query = query.eq("worker_id", worker_id)
         response = query.execute()
@@ -460,8 +580,18 @@ class SupabaseJobRepository(JobRepository):
         metadata: dict[str, Any] | None = None,
         worker_id: str | None = None,
     ) -> JobRecord | None:
+        record = self.get_job(job_id)
+        if record is None:
+            return None
+        target = JobStatus.CANCELLED if cancelled else JobStatus.FAILED
+        _assert_transition(record, target)
+        if record.worker_id is not None and record.worker_id != worker_id:
+            raise IllegalStateTransition(
+                f"Từ chối cập nhật Job {job_id}: worker_id '{worker_id}' không sở hữu job này (sở hữu hiện tại: '{record.worker_id}')"
+            )
+
         payload: dict[str, Any] = {
-            "status": JobStatus.CANCELLED.value if cancelled else JobStatus.FAILED.value,
+            "status": target.value,
             "error": error,
             "error_detail": _normalize_error_detail(error_detail).to_dict() if error_detail else None,
             "worker_id": None,
@@ -472,7 +602,7 @@ class SupabaseJobRepository(JobRepository):
         }
         if metadata:
             payload["metadata"] = metadata
-        query = self.client.table(self.table).update(payload).eq("id", job_id)
+        query = self.client.table(self.table).update(payload).eq("id", job_id).eq("status", JobStatus.RUNNING.value)
         if worker_id is not None:
             query = query.eq("worker_id", worker_id)
         response = query.execute()
@@ -480,9 +610,71 @@ class SupabaseJobRepository(JobRepository):
             return None
         return JobRecord.from_dict(response.data[0])
 
-    def release_stale_leases(self) -> int:
-        response = self.client.rpc("release_stale_leases").execute()
+    def release_stale_leases(self, *, max_attempts: int = 3) -> int:
+        try:
+            response = self.client.rpc("release_stale_leases", {"p_max_attempts": max_attempts}).execute()
+        except TypeError:
+            response = self.client.rpc("release_stale_leases").execute()
         return int(response.data or 0)
+
+    def fail_overlong_jobs(self, *, max_duration_seconds: int = 3600) -> int:
+        cutoff = utcnow() - timedelta(seconds=max_duration_seconds)
+        now = utcnow().isoformat()
+        payload = {
+            "status": JobStatus.FAILED.value,
+            "error": f"exceeded max duration ({max_duration_seconds}s)",
+            "error_detail": JobError(
+                code="MAX_DURATION_EXCEEDED",
+                message=f"exceeded max duration ({max_duration_seconds}s)",
+                retriable=False,
+                stage="execution",
+            ).to_dict(),
+            "worker_id": None,
+            "pid": None,
+            "lease_expires_at": None,
+            "finished_at": now,
+            "updated_at": now,
+        }
+        response = (
+            self.client.table(self.table)
+            .update(payload)
+            .eq("status", JobStatus.RUNNING.value)
+            .lte("started_at", cutoff.isoformat())
+            .execute()
+        )
+        return len(response.data or [])
+
+    def mark_webhook_attempt(self, job_id: str, *, success: bool, error: str | None = None) -> JobRecord | None:
+        payload: dict[str, Any] = {
+            "updated_at": utcnow().isoformat(),
+            "last_webhook_error": None if success else (error or "delivery failed"),
+        }
+        if success:
+            payload["terminal_notified"] = True
+        record = self.get_job(job_id)
+        payload["webhook_attempts"] = int(record.webhook_attempts if record else 0) + 1
+        response = self.client.table(self.table).update(payload).eq("id", job_id).execute()
+        if not response.data:
+            return None
+        return JobRecord.from_dict(response.data[0])
+
+    def list_pending_webhooks(self, *, limit: int = 50, max_attempts: int = 3) -> list[JobRecord]:
+        response = (
+            self.client.table(self.table)
+            .select("*")
+            .in_("status", [JobStatus.DONE.value, JobStatus.FAILED.value, JobStatus.CANCELLED.value])
+            .eq("terminal_notified", False)
+            .lt("webhook_attempts", max_attempts)
+            .order("updated_at", desc=False)
+            .limit(limit)
+            .execute()
+        )
+        jobs = [JobRecord.from_dict(item) for item in (response.data or [])]
+        return [
+            job
+            for job in jobs
+            if job.metadata.get("webhook_url") or job.payload.get("webhook_url")
+        ]
 
 
 class JobManager:
@@ -501,6 +693,7 @@ class JobManager:
         input_uri: str | None = None,
         metadata: dict[str, Any] | None = None,
         priority: int | None = None,
+        retry_of_job_id: str | None = None,
     ) -> JobRecord:
         payload = payload or {}
         record = JobRecord(
@@ -512,6 +705,7 @@ class JobManager:
             input_path=input_path,
             input_uri=input_uri,
             metadata=metadata or {},
+            retry_of_job_id=retry_of_job_id,
         )
         return self.repository.create_job(record)
 
@@ -531,7 +725,10 @@ class JobManager:
         return self.repository.set_pid(job_id, pid)
 
     def request_cancel(self, job_id: str) -> JobRecord | None:
-        return self.repository.request_cancel(job_id)
+        record = self.repository.request_cancel(job_id)
+        if record is not None and record.status == JobStatus.CANCELLED:
+            self._notify_terminal(record, event="job.cancelled")
+        return record
 
     def is_cancel_requested(self, job_id: str) -> bool:
         return self.repository.is_cancel_requested(job_id)
@@ -588,16 +785,41 @@ class JobManager:
         self._notify_terminal(record, event="job.cancelled" if cancelled else "job.failed")
         return record
 
-    def release_stale_leases(self) -> int:
-        return self.repository.release_stale_leases()
+    def release_stale_leases(self, *, max_attempts: int = 3) -> int:
+        count = self.repository.release_stale_leases(max_attempts=max_attempts)
+        if count:
+            self.retry_pending_webhooks(max_retries=max_attempts)
+        return count
 
-    def _notify_terminal(self, record: JobRecord | None, *, event: str) -> None:
+    def fail_overlong_jobs(self, *, max_duration_seconds: int = 3600) -> int:
+        count = self.repository.fail_overlong_jobs(max_duration_seconds=max_duration_seconds)
+        if count:
+            self.retry_pending_webhooks()
+        return count
+
+    def retry_pending_webhooks(self, *, max_retries: int = 3, limit: int = 50) -> int:
+        count = 0
+        for record in self.repository.list_pending_webhooks(limit=limit, max_attempts=max_retries):
+            event = {
+                JobStatus.DONE: "job.completed",
+                JobStatus.FAILED: "job.failed",
+                JobStatus.CANCELLED: "job.cancelled",
+            }.get(record.status)
+            if event:
+                self._notify_terminal(record, event=event, emit_metrics=False)
+                count += 1
+        return count
+
+    def _notify_terminal(self, record: JobRecord | None, *, event: str, emit_metrics: bool = True) -> None:
         if record is None:
             return
         duration = None
         if record.started_at and record.finished_at:
             duration = max((record.finished_at - record.started_at).total_seconds(), 0.0)
-        metrics.terminal(record.pipeline_type, record.status.value, duration)
+        if emit_metrics:
+            metrics.terminal(record.pipeline_type, record.status.value, duration)
+        if record.terminal_notified:
+            return
         webhook_url = record.metadata.get("webhook_url") or record.payload.get("webhook_url")
         if not webhook_url:
             return
@@ -606,10 +828,14 @@ class JobManager:
             return
         timeout = float(getattr(self, "webhook_timeout_seconds", 10.0))
         threading.Thread(
-            target=_dispatch_webhook,
+            target=self._dispatch_and_mark_webhook,
             args=(str(webhook_url), record, event, timeout),
             daemon=True,
         ).start()
+
+    def _dispatch_and_mark_webhook(self, url: str, record: JobRecord, event: str, timeout: float) -> None:
+        error = _dispatch_webhook(url, record, event, timeout)
+        self.repository.mark_webhook_attempt(record.id, success=error is None, error=error)
 
 
 def _resolve_priority(payload: dict[str, Any], explicit: int | None = None) -> int:
@@ -628,7 +854,7 @@ def _normalize_error_detail(error_detail: JobError | dict[str, Any] | None) -> J
     return JobError.from_dict(error_detail)
 
 
-def _dispatch_webhook(url: str, record: JobRecord, event: str, timeout: float) -> None:
+def _dispatch_webhook(url: str, record: JobRecord, event: str, timeout: float) -> str | None:
     import json
 
     payload = json.dumps(
@@ -654,3 +880,5 @@ def _dispatch_webhook(url: str, record: JobRecord, event: str, timeout: float) -
             pass
     except (OSError, URLError) as exc:
         logger.warning("webhook dispatch failed for job {} to {}: {}", record.id, url, exc)
+        return str(exc)
+    return None

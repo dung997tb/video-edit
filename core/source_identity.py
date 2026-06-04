@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 
+from core.artifact_key import normalize_artifact_key
 from core.artifact_store import ArtifactStore
 from core.cache import hash_file, sha256_bytes, sha256_text
 
@@ -31,6 +32,7 @@ def resolve_source_sha256(
         except OSError as exc:
             raise ValueError(f"input_path not found: {input_path}") from exc
     if source_key:
+        source_key = normalize_artifact_key(source_key)
         if artifact_store is None:
             raise ValueError("artifact_store is required when source_key is provided without source_sha256")
         try:

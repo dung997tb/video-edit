@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from core.models import StepResult
 from modules.base import BaseModule
 from modules.registry import register
@@ -52,21 +54,27 @@ class SplitVideoModule(BaseModule):
                         f"{start:.3f}",
                         "-t",
                         f"{float(duration):.3f}",
-                        "-c",
-                        "copy",
+                        "-map",
+                        "0:v:0",
+                        "-map",
+                        "0:a?",
+                        "-c:v",
+                        str(self.params.get("video_codec", "libx264")),
+                        "-preset",
+                        str(self.params.get("preset", "veryfast")),
+                        "-crf",
+                        str(self.params.get("crf", 23)),
+                        "-c:a",
+                        str(self.params.get("audio_codec", "aac")),
+                        "-movflags",
+                        "+faststart",
                         "-reset_timestamps",
                         "1",
                         str(output_path),
                     ],
                 )
                 outputs.append(str(output_path))
-            return StepResult(
-                context_patch={
-                    "output_video": str(output_dir),
-                    "metadata": {"segments": outputs},
-                },
-                artifacts={"segments": outputs},
-            )
+            return _segments_result(output_dir, outputs)
 
         pattern = output_dir / "segment_%03d.mp4"
         command = [
@@ -87,9 +95,21 @@ class SplitVideoModule(BaseModule):
             command.extend(["-to", f"{float(end):.3f}"])
         command.extend(
             [
-                "-c",
-                "copy",
                 "-map",
+                "0:v:0",
+                "-map",
+                "0:a?",
+                "-c:v",
+                str(self.params.get("video_codec", "libx264")),
+                "-preset",
+                str(self.params.get("preset", "veryfast")),
+                "-crf",
+                str(self.params.get("crf", 23)),
+                "-c:a",
+                str(self.params.get("audio_codec", "aac")),
+                "-force_key_frames",
+                f"expr:gte(t,n_forced*{segment_seconds:.3f})",
+                "-sc_threshold",
                 "0",
                 "-f",
                 "segment",
@@ -106,10 +126,20 @@ class SplitVideoModule(BaseModule):
             command,
         )
         outputs = [str(path) for path in sorted(output_dir.glob("segment_*.mp4"))]
-        return StepResult(
-            context_patch={
-                "output_video": str(output_dir),
-                "metadata": {"segments": outputs},
-            },
-            artifacts={"segments": outputs},
-        )
+        return _segments_result(output_dir, outputs)
+
+
+def _segments_result(output_dir, outputs: list[str]) -> StepResult:
+    if not outputs:
+        raise RuntimeError("split_video produced no segments")
+    missing = [path for path in outputs if not Path(path).exists()]
+    if missing:
+        raise RuntimeError(f"split_video did not create expected segment: {missing[0]}")
+    return StepResult(
+        context_patch={
+            "output_video": str(output_dir),
+            "metadata": {"segments": outputs},
+            "state": {"skip_finalize": True},
+        },
+        artifacts={"segments": outputs},
+    )

@@ -1,0 +1,31 @@
+{
+	"node": "n8n-nodes-ai-video-engine.aiVideoEngineTrigger",
+	"nodeVersion": "1.0",
+	"codexVersion": "1.0",
+	"categories": ["Trigger"],
+	"subcategories": {
+		"Trigger": ["Video Processing"]
+	},
+	"resources": {
+		"primaryDocumentation": [
+			{
+				"url": "https://github.com/dung997tb/video-edit/tree/main/n8n-nodes-ai-video-engine"
+			}
+		]
+	},
+	"alias": [
+		"mewocamm",
+		"mewocamm video editor",
+		"video editor",
+		"ai video engine",
+		"video callback",
+		"video webhook",
+		"webhook video",
+		"job completed",
+		"job failed",
+		"job cancelled",
+		"video trigger",
+		"ai video callback",
+		"callback video"
+	]
+}

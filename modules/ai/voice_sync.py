@@ -10,6 +10,8 @@ from modules.registry import register
 
 
 MIN_SYNC_DURATION = 0.001
+MAX_VOICE_SYNC_INPUTS_PER_COMMAND = 64
+FILTER_SCRIPT_THRESHOLD = 4000
 
 
 @dataclass(slots=True)
@@ -116,6 +118,10 @@ def build_voice_filter_complex(plans: list[VoiceSyncPlan]) -> str:
     return ";".join(lines)
 
 
+def _chunk_plans(plans: list[VoiceSyncPlan], chunk_size: int) -> list[list[VoiceSyncPlan]]:
+    return [plans[index : index + chunk_size] for index in range(0, len(plans), chunk_size)]
+
+
 def _build_atempo_filters(speed: float) -> list[str]:
     if abs(speed - 1.0) < 1e-6:
         return []
@@ -169,6 +175,28 @@ class VoiceSyncModule(BaseModule):
             if plan.dropped_source_duration > 0
         ]
         total_duration = max((plan.end_time for plan in plans), default=MIN_SYNC_DURATION)
+        if len(plans) > MAX_VOICE_SYNC_INPUTS_PER_COMMAND:
+            partial_paths = []
+            for chunk_index, plan_chunk in enumerate(
+                _chunk_plans(plans, MAX_VOICE_SYNC_INPUTS_PER_COMMAND),
+                start=1,
+            ):
+                partial_path = context.file_manager.temp(f"06_synced_part_{chunk_index:03d}.wav")
+                self._run_sync_command(plan_chunk, total_duration, partial_path, context, services)
+                partial_paths.append(str(partial_path))
+            self._mix_partial_outputs(partial_paths, output_path, context, services)
+        else:
+            self._run_sync_command(plans, total_duration, output_path, context, services)
+        metadata_patch = {
+            "voice_sync_overflow_segments": overflow_segments,
+            "overflow_unresolved": bool(overflow_segments),
+        }
+        return StepResult(
+            context_patch={"synced_audio": str(output_path), "metadata": metadata_patch},
+            artifacts={"synced_audio": str(output_path)},
+        )
+
+    def _run_sync_command(self, plans: list[VoiceSyncPlan], total_duration: float, output_path, context, services) -> None:
         command = [
             services.settings.ffmpeg_path,
             "-y",
@@ -182,7 +210,7 @@ class VoiceSyncModule(BaseModule):
         for plan in plans:
             command.extend(["-i", plan.path])
         filter_complex = build_voice_filter_complex(plans)
-        if len(filter_complex) > 4000:
+        if len(filter_complex) > FILTER_SCRIPT_THRESHOLD:
             filter_script_path = context.file_manager.temp("06_voice_sync_filter.txt")
             filter_script_path.write_text(filter_complex, encoding="utf-8")
             command.extend(["-filter_complex_script", str(filter_script_path)])
@@ -203,13 +231,25 @@ class VoiceSyncModule(BaseModule):
             cancel_check=lambda: services.job_manager.is_cancel_requested(context.job_id),
             grace_seconds=services.settings.cancel_grace_seconds,
         )
-        metadata_patch = {
-            "voice_sync_overflow_segments": overflow_segments,
-            "overflow_unresolved": bool(overflow_segments),
-        }
-        return StepResult(
-            context_patch={"synced_audio": str(output_path), "metadata": metadata_patch},
-            artifacts={"synced_audio": str(output_path)},
+
+    def _mix_partial_outputs(self, partial_paths: list[str], output_path, context, services) -> None:
+        if not partial_paths:
+            raise ValueError("partial_paths are required before final voice mix")
+        command = [services.settings.ffmpeg_path, "-y"]
+        for path in partial_paths:
+            command.extend(["-i", path])
+        filter_complex = (
+            "".join(f"[{index}:a]" for index in range(len(partial_paths)))
+            + f"amix=inputs={len(partial_paths)}:duration=longest:normalize=0[out]"
+        )
+        command.extend(["-filter_complex", filter_complex, "-map", "[out]", str(output_path)])
+        run_subprocess(
+            command,
+            job_id=context.job_id,
+            job_manager=services.job_manager,
+            process_registry=services.process_registry,
+            cancel_check=lambda: services.job_manager.is_cancel_requested(context.job_id),
+            grace_seconds=services.settings.cancel_grace_seconds,
         )
 
     def _probe_duration(self, audio_path: str, context, services) -> float:

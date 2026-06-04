@@ -23,7 +23,7 @@ class RotateVideoModule(BaseModule):
         output_path = operation_output_path(context, self.params, self.NAME)
         degrees = float(self.params.get("degrees", 0.0))
         radians = degrees * math.pi / 180.0
-        vf = f"rotate={radians:.8f}:ow=rotw(iw):oh=roth(ih):fillcolor=black"
+        vf = f"rotate={radians:.8f}:ow=ceil(rotw(iw)/2)*2:oh=ceil(roth(ih)/2)*2:fillcolor=black"
         command = [
             services.settings.ffmpeg_path,
             "-y",

@@ -23,6 +23,9 @@ create table if not exists jobs (
   error text,
   error_detail jsonb,
   metadata jsonb not null default '{}'::jsonb,
+  terminal_notified boolean not null default false,
+  webhook_attempts int not null default 0,
+  last_webhook_error text,
   created_at timestamptz not null default now(),
   started_at timestamptz,
   finished_at timestamptz,
@@ -30,7 +33,22 @@ create table if not exists jobs (
 );
 
 alter table jobs add column if not exists priority int not null default 0;
+alter table jobs add column if not exists log text;
 alter table jobs add column if not exists error_detail jsonb;
+alter table jobs add column if not exists terminal_notified boolean not null default false;
+alter table jobs add column if not exists webhook_attempts int not null default 0;
+alter table jobs add column if not exists last_webhook_error text;
+alter table jobs add column if not exists started_at timestamptz;
+alter table jobs add column if not exists finished_at timestamptz;
+
+create table if not exists job_secrets (
+  job_id uuid not null references jobs(id) on delete cascade,
+  path text not null,
+  value text not null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  primary key (job_id, path)
+);
 
 create or replace function set_updated_at()
 returns trigger
@@ -45,6 +63,12 @@ $$;
 drop trigger if exists jobs_set_updated_at on jobs;
 create trigger jobs_set_updated_at
 before update on jobs
+for each row
+execute function set_updated_at();
+
+drop trigger if exists job_secrets_set_updated_at on job_secrets;
+create trigger job_secrets_set_updated_at
+before update on job_secrets
 for each row
 execute function set_updated_at();
 
@@ -77,13 +101,8 @@ begin
     select id
     from jobs
     where
-      (status = 'pending' and cancel_requested = false)
-      or (
-        status = 'running'
-        and cancel_requested = false
-        and lease_expires_at is not null
-        and lease_expires_at <= v_now
-      )
+      status = 'pending'
+      and cancel_requested = false
     order by priority desc, created_at asc
     limit p_limit
     for update skip locked
@@ -105,7 +124,7 @@ begin
 end;
 $$;
 
-create or replace function release_stale_leases()
+create or replace function release_stale_leases(p_max_attempts int default 3)
 returns int
 language plpgsql
 as $$
@@ -114,11 +133,36 @@ declare
 begin
   update jobs
   set
-    status = case when cancel_requested then 'cancelled' else 'pending' end,
+    status = case
+      when cancel_requested then 'cancelled'
+      when attempt_count >= p_max_attempts then 'failed'
+      else 'pending'
+    end,
     worker_id = null,
     lease_expires_at = null,
     pid = null,
-    finished_at = case when cancel_requested then now() else finished_at end,
+    finished_at = case
+      when cancel_requested or attempt_count >= p_max_attempts then now()
+      else finished_at
+    end,
+    error = case
+      when cancel_requested then coalesce(error, 'cancelled')
+      when attempt_count >= p_max_attempts then coalesce(error, 'max attempts (' || p_max_attempts || ') exceeded')
+      else error
+    end,
+    error_detail = case
+      when attempt_count >= p_max_attempts and not cancel_requested then jsonb_build_object(
+        'code', 'MAX_ATTEMPTS_EXCEEDED',
+        'message', 'job exceeded ' || p_max_attempts || ' attempts',
+        'retriable', false,
+        'stage', 'execution'
+      )
+      else error_detail
+    end,
+    progress = case
+      when cancel_requested or attempt_count >= p_max_attempts then progress
+      else 0
+    end,
     updated_at = now()
   where
     status = 'running'
@@ -200,10 +244,16 @@ create or replace function verify_jobs_schema_requirements(
     'step_index',
     'total_steps',
     'current_step',
+    'log',
     'error',
     'error_detail',
     'metadata',
+    'terminal_notified',
+    'webhook_attempts',
+    'last_webhook_error',
     'created_at',
+    'started_at',
+    'finished_at',
     'updated_at'
   ],
   p_required_indexes text[] default array[
@@ -219,6 +269,7 @@ stable
 as $$
 declare
   v_table_exists boolean;
+  v_secret_table_exists boolean;
   v_trigger_exists boolean;
   v_missing_rpcs text[];
   v_missing_columns text[];
@@ -230,6 +281,13 @@ begin
     where table_schema = 'public'
       and table_name = p_table_name
   ) into v_table_exists;
+
+  select exists(
+    select 1
+    from information_schema.tables
+    where table_schema = 'public'
+      and table_name = 'job_secrets'
+  ) into v_secret_table_exists;
 
   select exists(
     select 1
@@ -278,11 +336,13 @@ begin
   return jsonb_build_object(
     'ok',
       v_table_exists
+      and v_secret_table_exists
       and v_trigger_exists
       and coalesce(array_length(v_missing_rpcs, 1), 0) = 0
       and coalesce(array_length(v_missing_columns, 1), 0) = 0
       and coalesce(array_length(v_missing_indexes, 1), 0) = 0,
     'table_exists', v_table_exists,
+    'secret_table_exists', v_secret_table_exists,
     'trigger_exists', v_trigger_exists,
     'missing_rpcs', to_jsonb(v_missing_rpcs),
     'missing_columns', to_jsonb(v_missing_columns),

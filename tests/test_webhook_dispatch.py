@@ -61,6 +61,20 @@ def _manager() -> JobManager:
     return manager
 
 
+def _claim(manager: JobManager, job_id: str, worker_id: str = "worker-test") -> None:
+    claimed = manager.claim_jobs(worker_id, limit=1, lease_seconds=30)
+    assert [job.id for job in claimed] == [job_id]
+
+
+def _wait_for(predicate, timeout: float = 2.0) -> bool:
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        if predicate():
+            return True
+        time.sleep(0.01)
+    return bool(predicate())
+
+
 class WebhookDispatchTests(unittest.TestCase):
     def test_webhook_called_on_complete(self) -> None:
         server, url, recorder = _start_webhook_server()
@@ -68,8 +82,9 @@ class WebhookDispatchTests(unittest.TestCase):
         self.addCleanup(server.shutdown)
         manager = _manager()
         job = manager.create_job(pipeline_type="dubbing", source_sha256="hash", metadata={"webhook_url": url})
+        _claim(manager, job.id)
 
-        manager.complete_job(job.id, "output.mp4")
+        manager.complete_job(job.id, "output.mp4", worker_id="worker-test")
 
         self.assertTrue(recorder.event.wait(2.0))
         payload = recorder.requests[0]["json"]
@@ -84,11 +99,13 @@ class WebhookDispatchTests(unittest.TestCase):
         self.addCleanup(server.shutdown)
         manager = _manager()
         job = manager.create_job(pipeline_type="dubbing", source_sha256="hash", metadata={"webhook_url": url})
+        _claim(manager, job.id)
 
         manager.fail_job(
             job.id,
             "boom",
             error_detail={"code": "FFMPEG_FAILED", "message": "ffmpeg failed", "step": "render"},
+            worker_id="worker-test",
         )
 
         self.assertTrue(recorder.event.wait(2.0))
@@ -104,8 +121,9 @@ class WebhookDispatchTests(unittest.TestCase):
         self.addCleanup(server.shutdown)
         manager = _manager()
         job = manager.create_job(pipeline_type="dubbing", source_sha256="hash", metadata={"webhook_url": url})
+        _claim(manager, job.id)
 
-        manager.fail_job(job.id, "cancelled by user", cancelled=True)
+        manager.fail_job(job.id, "cancelled by user", cancelled=True, worker_id="worker-test")
 
         self.assertTrue(recorder.event.wait(2.0))
         payload = recorder.requests[0]["json"]
@@ -115,9 +133,10 @@ class WebhookDispatchTests(unittest.TestCase):
     def test_webhook_skipped_when_no_url(self) -> None:
         manager = _manager()
         job = manager.create_job(pipeline_type="dubbing", source_sha256="hash")
+        _claim(manager, job.id)
 
         with patch("core.job_manager._dispatch_webhook") as dispatch:
-            manager.complete_job(job.id, "output.mp4")
+            manager.complete_job(job.id, "output.mp4", worker_id="worker-test")
 
         dispatch.assert_not_called()
 
@@ -129,9 +148,10 @@ class WebhookDispatchTests(unittest.TestCase):
             source_sha256="hash",
             metadata={"webhook_url": "http://127.0.0.1:1/webhook"},
         )
+        _claim(manager, job.id)
 
         with patch("core.job_manager._dispatch_webhook") as dispatch:
-            manager.complete_job(job.id, "output.mp4")
+            manager.complete_job(job.id, "output.mp4", worker_id="worker-test")
 
         dispatch.assert_not_called()
 
@@ -145,8 +165,9 @@ class WebhookDispatchTests(unittest.TestCase):
             source_sha256="hash",
             metadata={"webhook_url": url, "result_items": [{"kind": "video", "uri": "output.mp4"}]},
         )
+        _claim(manager, job.id)
 
-        manager.complete_job(job.id, "output.mp4")
+        manager.complete_job(job.id, "output.mp4", worker_id="worker-test")
 
         self.assertTrue(recorder.event.wait(2.0))
         payload = recorder.requests[0]["json"]
@@ -164,8 +185,9 @@ class WebhookDispatchTests(unittest.TestCase):
         self.addCleanup(server.shutdown)
         manager = _manager()
         job = manager.create_job(pipeline_type="dubbing", source_sha256="hash", metadata={"webhook_url": url})
+        _claim(manager, job.id)
 
-        manager.complete_job(job.id, "output.mp4")
+        manager.complete_job(job.id, "output.mp4", worker_id="worker-test")
 
         self.assertTrue(recorder.event.wait(2.0))
         self.assertEqual(recorder.requests[0]["json"]["job_id"], job.id)
@@ -176,8 +198,9 @@ class WebhookDispatchTests(unittest.TestCase):
         self.addCleanup(server.shutdown)
         manager = _manager()
         job = manager.create_job(pipeline_type="dubbing", source_sha256="hash", payload={"webhook_url": url})
+        _claim(manager, job.id)
 
-        manager.complete_job(job.id, "output.mp4")
+        manager.complete_job(job.id, "output.mp4", worker_id="worker-test")
 
         self.assertTrue(recorder.event.wait(2.0))
         self.assertEqual(recorder.requests[0]["json"]["event"], "job.completed")
@@ -189,12 +212,86 @@ class WebhookDispatchTests(unittest.TestCase):
         manager = _manager()
         manager.webhook_timeout_seconds = 0.05
         job = manager.create_job(pipeline_type="dubbing", source_sha256="hash", metadata={"webhook_url": url})
+        _claim(manager, job.id)
 
         started_at = time.perf_counter()
-        manager.complete_job(job.id, "output.mp4")
+        manager.complete_job(job.id, "output.mp4", worker_id="worker-test")
         elapsed = time.perf_counter() - started_at
 
         self.assertLess(elapsed, 0.2)
+
+    def test_successful_webhook_marks_terminal_notified(self) -> None:
+        server, url, recorder = _start_webhook_server()
+        self.addCleanup(server.server_close)
+        self.addCleanup(server.shutdown)
+        manager = _manager()
+        job = manager.create_job(pipeline_type="dubbing", source_sha256="hash", metadata={"webhook_url": url})
+        _claim(manager, job.id)
+
+        manager.complete_job(job.id, "output.mp4", worker_id="worker-test")
+
+        self.assertTrue(recorder.event.wait(2.0))
+        self.assertTrue(
+            _wait_for(lambda: bool(manager.get_job(job.id).terminal_notified)),
+            "webhook delivery was not marked as notified",
+        )
+        refreshed = manager.get_job(job.id)
+        self.assertEqual(refreshed.webhook_attempts, 1)
+        self.assertIsNone(refreshed.last_webhook_error)
+
+    def test_webhook_failure_is_tracked_separately_from_job_failure(self) -> None:
+        manager = _manager()
+        job = manager.create_job(
+            pipeline_type="dubbing",
+            source_sha256="hash",
+            metadata={"webhook_url": "http://127.0.0.1:1/webhook"},
+        )
+        _claim(manager, job.id)
+
+        manager.complete_job(job.id, "output.mp4", worker_id="worker-test")
+
+        self.assertTrue(
+            _wait_for(lambda: manager.get_job(job.id).webhook_attempts == 1),
+            "webhook failure attempt was not tracked",
+        )
+        refreshed = manager.get_job(job.id)
+        self.assertEqual(refreshed.status.value, "done")
+        self.assertFalse(refreshed.terminal_notified)
+        self.assertIsNotNone(refreshed.last_webhook_error)
+
+    def test_retry_pending_webhooks_resends_undelivered_terminal_callback(self) -> None:
+        server, url, recorder = _start_webhook_server()
+        self.addCleanup(server.server_close)
+        self.addCleanup(server.shutdown)
+        manager = _manager()
+        job = manager.create_job(pipeline_type="dubbing", source_sha256="hash", metadata={"webhook_url": url})
+        _claim(manager, job.id)
+        manager.repository.fail_job(job.id, "boom", worker_id="worker-test")
+
+        retried = manager.retry_pending_webhooks(max_retries=3)
+
+        self.assertEqual(retried, 1)
+        self.assertTrue(recorder.event.wait(2.0))
+        self.assertEqual(recorder.requests[0]["json"]["event"], "job.failed")
+        self.assertTrue(
+            _wait_for(lambda: bool(manager.get_job(job.id).terminal_notified)),
+            "retry did not mark webhook as delivered",
+        )
+
+    def test_retry_pending_webhooks_stops_after_max_retries(self) -> None:
+        manager = _manager()
+        job = manager.create_job(
+            pipeline_type="dubbing",
+            source_sha256="hash",
+            metadata={"webhook_url": "http://127.0.0.1:1/webhook"},
+        )
+        _claim(manager, job.id)
+        manager.repository.fail_job(job.id, "boom", worker_id="worker-test")
+        manager.repository.mark_webhook_attempt(job.id, success=False, error="first")
+
+        retried = manager.retry_pending_webhooks(max_retries=1)
+
+        self.assertEqual(retried, 0)
 
 
 if __name__ == "__main__":

@@ -175,13 +175,18 @@ class FfmpegIntegrationTests(unittest.TestCase):
             source_sha256="hash-resume",
             input_path=str(input_path),
         )
+        runner = PipelineRunner(services)
+        worker_id = services.settings.resolved_worker_id
+        claimed = services.job_manager.claim_jobs(worker_id, limit=1, lease_seconds=30)[0]
 
         with self.assertRaises(RuntimeError):
-            runner.run_job(job)
+            runner.run_job(claimed)
         self.assertEqual(_FfmpegStepWithCounter.calls, 1)
 
         refreshed = services.job_manager.get_job(job.id)
         self.assertIsNotNone(refreshed)
+        services.job_manager.repository._records[job.id].status = JobStatus.RUNNING
+        services.job_manager.repository._records[job.id].worker_id = worker_id
         context = runner.run_job(refreshed)
 
         self.assertEqual(_FfmpegStepWithCounter.calls, 1)

@@ -616,6 +616,7 @@ Job-level error nằm trong `JobResponse.error` và `JobResponse.error_detail`, 
 | `SUPABASE_KEY` | rỗng | Service role key |
 | `SUPABASE_JOBS_TABLE` | `jobs` | Bảng job |
 | `SUPABASE_STORAGE_BUCKET` | `artifacts` | Bucket artifact |
+| `SECRET_STORE_BACKEND` | `memory` | `memory` hoặc `supabase`; cần `supabase` khi worker tách process và job có per-job provider key |
 | `OUTPUT_DIR` | `output` | Thư mục output |
 | `TEMP_DIR` | `temp` | Thư mục tạm |
 | `CACHE_DIR` | `cache` | Thư mục cache |
@@ -628,6 +629,7 @@ Job-level error nằm trong `JobResponse.error` và `JobResponse.error_detail`, 
 | `API_ALLOW_INPUT_PATH` | `false` | Cho phép local path |
 | `API_ALLOW_CLIENT_SOURCE_SHA256` | `false` | Cho phép client gửi SHA trực tiếp |
 | `API_ALLOWED_INPUT_URI_SCHEMES` | `http,https` | Scheme input URI |
+| `API_ALLOW_PRIVATE_NETWORK_URLS` | `false` | Cho phép `input_uri`/`webhook_url` trỏ localhost/private network cho local dev |
 | `API_UPLOAD_MAX_BYTES` | `536870912` | Giới hạn upload |
 | `API_RATE_LIMIT_PER_MINUTE` | `60` | Rate limit mỗi API key |
 | `WEBHOOKS_ENABLED` | `false` | Bật webhook |

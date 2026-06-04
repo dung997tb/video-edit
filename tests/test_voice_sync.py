@@ -1,4 +1,6 @@
 import unittest
+from pathlib import Path
+from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -100,3 +102,41 @@ class VoiceSyncTests(unittest.TestCase):
 
         self.assertTrue(result.context_patch["metadata"]["overflow_unresolved"])
         self.assertGreater(len(result.context_patch["metadata"]["voice_sync_overflow_segments"]), 0)
+
+    def test_execute_chunks_large_tts_segment_sets(self) -> None:
+        module = VoiceSyncModule(params={"max_audio_stretch": 1.3})
+        segments = [
+            {"index": index, "start": index * 0.2, "end": (index + 1) * 0.2, "path": f"{index}.wav"}
+            for index in range(130)
+        ]
+        services = SimpleNamespace(
+            settings=SimpleNamespace(
+                ffmpeg_path="ffmpeg",
+                ffprobe_path="ffprobe",
+                max_audio_stretch=1.3,
+                cancel_grace_seconds=0.1,
+            ),
+            job_manager=SimpleNamespace(is_cancel_requested=lambda job_id: False),
+            process_registry=SimpleNamespace(),
+        )
+
+        with TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            context = SimpleNamespace(
+                job_id="job-1",
+                tts_segments=segments,
+                file_manager=SimpleNamespace(
+                    step_file=lambda name: temp_path / "synced.wav",
+                    temp=lambda name: temp_path / name,
+                ),
+                metadata={},
+            )
+            with (
+                patch.object(module, "_probe_duration", return_value=0.1),
+                patch("modules.ai.voice_sync.run_subprocess") as run_mock,
+            ):
+                module.execute(context, services)
+
+        commands = [call.args[0] for call in run_mock.call_args_list]
+        self.assertEqual(len(commands), 4)
+        self.assertLessEqual(max(command.count("-i") for command in commands), 65)

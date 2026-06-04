@@ -77,6 +77,7 @@ python main.py run video_goc.mp4 --config-file pipelines/examples/low_level_basi
 |---|---|---|
 | `JOB_BACKEND` | `memory` | Backend hàng đợi: `memory` (local) hoặc `supabase` (production) |
 | `ARTIFACT_STORE_BACKEND` | `local` | Nơi lưu file: `local` hoặc `supabase` |
+| `SECRET_STORE_BACKEND` | `memory` | Nơi lưu per-job provider key: `memory` hoặc `supabase` |
 | `FFMPEG_PATH` | `ffmpeg` | Đường dẫn tới file thực thi ffmpeg |
 | `WHISPER_MODEL` | `base` | Kích thước model Whisper: `tiny`, `base`, `small`, `medium`, `large` |
 | `TRANSLATOR_SERVICE` | `google` | Dịch vụ dịch thuật: `google`, `deepl`, `libretranslate` |
@@ -85,6 +86,7 @@ python main.py run video_goc.mp4 --config-file pipelines/examples/low_level_basi
 | `MAX_AUDIO_STRETCH` | `1.3` | Mức độ co/giãn tốc độ giọng đọc tối đa (1.3 = nhanh tối đa 30%) |
 | `API_SECRET_KEY` | `change-me` | **⚠️ BẮT BUỘC đổi khi lên Production** |
 | `API_EMBEDDED_WORKER` | `true` | `true`: Worker chạy cùng server. `false`: Chạy worker riêng |
+| `API_ALLOW_PRIVATE_NETWORK_URLS` | `false` | Cho phép `input_uri`/`webhook_url` trỏ localhost/private network, chỉ nên bật khi dev local |
 | `API_RATE_LIMIT_PER_MINUTE` | `60` | Giới hạn request mỗi phút mỗi API key |
 | `METRICS_ENABLED` | `true` | Bật endpoint `/metrics` cho Prometheus |
 

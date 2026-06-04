@@ -612,6 +612,7 @@ Job-level errors are stored in `JobResponse.error` and `JobResponse.error_detail
 | `LOG_LEVEL` | `INFO` | Log level |
 | `JOB_BACKEND` | `memory` | `memory` or `supabase` |
 | `ARTIFACT_STORE_BACKEND` | `local` | `local` or `supabase` |
+| `SECRET_STORE_BACKEND` | `memory` | `memory` or `supabase`; use `supabase` when workers are separate and jobs carry per-job provider keys |
 | `SUPABASE_URL` | empty | Supabase URL |
 | `SUPABASE_KEY` | empty | Service role key |
 | `SUPABASE_JOBS_TABLE` | `jobs` | Jobs table |
@@ -628,6 +629,7 @@ Job-level errors are stored in `JobResponse.error` and `JobResponse.error_detail
 | `API_ALLOW_INPUT_PATH` | `false` | Allow local input paths |
 | `API_ALLOW_CLIENT_SOURCE_SHA256` | `false` | Allow direct client SHA-256 |
 | `API_ALLOWED_INPUT_URI_SCHEMES` | `http,https` | Allowed input URI schemes |
+| `API_ALLOW_PRIVATE_NETWORK_URLS` | `false` | Allow `input_uri`/`webhook_url` to target localhost/private networks for local development |
 | `API_UPLOAD_MAX_BYTES` | `536870912` | Upload limit |
 | `API_RATE_LIMIT_PER_MINUTE` | `60` | Per-key rate limit |
 | `WEBHOOKS_ENABLED` | `false` | Enable webhooks |

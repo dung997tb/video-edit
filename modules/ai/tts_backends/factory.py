@@ -16,7 +16,7 @@ def build_tts_backend(settings, provider_config: dict | None = None) -> TTSBacke
         or getattr(settings, "tts_engine", "edge-tts")
     ).strip().lower()
     if engine in {"edge", "edge-tts"}:
-        return EdgeTTSBackend()
+        return EdgeTTSBackend(settings=settings, provider_config=provider_config)
     if engine == "openai":
         return OpenAITTSBackend(
             api_key=provider_config.get("api_key") or getattr(settings, "openai_api_key", None),

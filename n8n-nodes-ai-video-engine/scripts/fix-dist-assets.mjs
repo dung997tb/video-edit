@@ -3,9 +3,14 @@ import { dirname, join } from 'node:path';
 
 const mappings = [
   ['src/nodes/AiVideoEngine/aiVideoEngine.svg', 'dist/nodes/AiVideoEngine/aiVideoEngine.svg'],
+  ['src/nodes/AiVideoEngine/AiVideoEngine.node.json', 'dist/nodes/AiVideoEngine/AiVideoEngine.node.json'],
   [
     'src/nodes/AiVideoEngineTrigger/aiVideoEngine.svg',
     'dist/nodes/AiVideoEngineTrigger/aiVideoEngine.svg',
+  ],
+  [
+    'src/nodes/AiVideoEngineTrigger/AiVideoEngineTrigger.node.json',
+    'dist/nodes/AiVideoEngineTrigger/AiVideoEngineTrigger.node.json',
   ],
 ];
 

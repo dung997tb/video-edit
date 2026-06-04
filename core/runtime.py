@@ -15,7 +15,7 @@ from core.job_manager import InMemoryJobRepository, JobManager, JobRepository, S
 from core.logger import configure_logger
 from core.process import ProcessRegistry
 from core.models import JobRecord
-from core.secrets import InMemorySecretStore
+from core.secrets import InMemorySecretStore, SupabaseSecretStore
 
 
 PipelineBuilder = Callable[[JobRecord, "AppServices"], Any]
@@ -28,7 +28,7 @@ class AppServices:
     cache_manager: CacheManager
     job_manager: JobManager
     process_registry: ProcessRegistry
-    secret_store: InMemorySecretStore = field(default_factory=InMemorySecretStore)
+    secret_store: Any = field(default_factory=InMemorySecretStore)
     asset_graph: Any = field(default_factory=InMemoryAssetGraph)
     event_bus: Any = field(default_factory=InMemoryEventBus)
     pipeline_builders: dict[str, PipelineBuilder] = field(default_factory=dict)
@@ -73,6 +73,15 @@ def build_event_bus(settings: Settings) -> Any:
     return InMemoryEventBus()
 
 
+def build_secret_store(settings: Settings) -> Any:
+    if settings.secret_store_backend == "supabase":
+        client = create_supabase_client(settings)
+        return SupabaseSecretStore(client)
+    if settings.secret_store_backend != "memory":
+        raise ConfigurationError(f"unsupported SECRET_STORE_BACKEND: {settings.secret_store_backend}")
+    return InMemorySecretStore()
+
+
 def build_pipeline_builders() -> dict[str, PipelineBuilder]:
     from orchestrators.factory import build_orchestrators
 
@@ -99,7 +108,7 @@ def build_services(settings: Settings | None = None) -> AppServices:
         cache_manager=cache_manager,
         job_manager=job_manager,
         process_registry=process_registry,
-        secret_store=InMemorySecretStore(),
+        secret_store=build_secret_store(active_settings),
         asset_graph=build_asset_graph(active_settings),
         event_bus=build_event_bus(active_settings),
         pipeline_builders=build_pipeline_builders(),

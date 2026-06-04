@@ -3,6 +3,7 @@ from __future__ import annotations
 import unittest
 from datetime import timedelta
 
+from core.exceptions import IllegalStateTransition
 from core.models import JobStatus, utcnow
 from tests.helpers import make_services, make_test_root
 
@@ -53,12 +54,14 @@ class JobManagerTests(unittest.TestCase):
         services = make_services(make_test_root("job-manager-terminal-pid"))
 
         completed_job = services.job_manager.create_job(pipeline_type="dubbing", source_sha256="hash-complete")
+        services.job_manager.claim_jobs("worker-a", limit=1, lease_seconds=30)
         services.job_manager.set_pid(completed_job.id, 12345)
-        completed = services.job_manager.complete_job(completed_job.id, "output.mp4")
+        completed = services.job_manager.complete_job(completed_job.id, "output.mp4", worker_id="worker-a")
 
         failed_job = services.job_manager.create_job(pipeline_type="dubbing", source_sha256="hash-fail")
+        services.job_manager.claim_jobs("worker-a", limit=1, lease_seconds=30)
         services.job_manager.set_pid(failed_job.id, 67890)
-        failed = services.job_manager.fail_job(failed_job.id, "boom")
+        failed = services.job_manager.fail_job(failed_job.id, "boom", worker_id="worker-a")
 
         self.assertIsNotNone(completed)
         self.assertIsNone(completed.pid)
@@ -79,20 +82,20 @@ class JobManagerTests(unittest.TestCase):
             current_step="step-b",
             progress=33,
         )
-        blocked_complete = services.job_manager.complete_job(
-            job.id,
-            "output.mp4",
-            worker_id="worker-b",
-        )
-        blocked_fail = services.job_manager.fail_job(
-            job.id,
-            "boom",
-            worker_id="worker-b",
-        )
+        with self.assertRaises(IllegalStateTransition):
+            services.job_manager.complete_job(
+                job.id,
+                "output.mp4",
+                worker_id="worker-b",
+            )
+        with self.assertRaises(IllegalStateTransition):
+            services.job_manager.fail_job(
+                job.id,
+                "boom",
+                worker_id="worker-b",
+            )
 
         self.assertIsNone(blocked_progress)
-        self.assertIsNone(blocked_complete)
-        self.assertIsNone(blocked_fail)
         refreshed = services.job_manager.get_job(job.id)
         self.assertIsNotNone(refreshed)
         self.assertEqual(refreshed.status, JobStatus.RUNNING)

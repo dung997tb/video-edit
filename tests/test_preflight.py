@@ -41,6 +41,13 @@ class PreflightTests(unittest.TestCase):
 
         self.assertTrue(result["ok"])
         self.assertEqual(client.calls[0][0], "verify_jobs_schema_requirements")
+        payload = client.calls[0][1]
+        self.assertIn("priority", payload["p_required_columns"])
+        self.assertIn("error_detail", payload["p_required_columns"])
+        self.assertIn("terminal_notified", payload["p_required_columns"])
+        self.assertIn("webhook_attempts", payload["p_required_columns"])
+        self.assertIn("last_webhook_error", payload["p_required_columns"])
+        self.assertIn("jobs_priority_claim_idx", payload["p_required_indexes"])
 
     def test_verify_supabase_jobs_schema_populates_default_keys(self) -> None:
         client = _Client([{}])

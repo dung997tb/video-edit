@@ -22,7 +22,7 @@ _SIMPLE_PATTERN = re.compile(
 
 
 def evaluate_condition(condition: str, context_vars: dict[str, Any]) -> bool:
-    """Evaluate simple workflow conditions safely, with legacy eval fallback."""
+    """Evaluate the supported V1 workflow condition grammar."""
     match = _SIMPLE_PATTERN.match(condition.strip())
     if match:
         namespace, key, op, raw_value = match.groups()
@@ -30,8 +30,10 @@ def evaluate_condition(condition: str, context_vars: dict[str, Any]) -> bool:
         rhs = _parse_literal(raw_value.strip())
         return bool(_OPS[op](lhs, rhs))
 
-    allowed_globals = {"__builtins__": {}}
-    return bool(eval(condition, allowed_globals, context_vars))
+    raise ValueError(
+        "unsupported workflow condition; expected payload['key'] == value, metadata['key'] == value, "
+        "or context['key'] == value"
+    )
 
 
 def _lookup(container: Any, key: str) -> Any:

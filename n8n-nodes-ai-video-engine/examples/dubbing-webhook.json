@@ -1,9 +1,9 @@
 {
-  "name": "AI Video Engine - Dubbing Webhook",
+  "name": "Mewocamm Video Editor - Dubbing Webhook",
   "nodes": [
     {
       "parameters": {
-        "path": "ai-video-engine-callback",
+        "path": "mewocamm-video-callback",
         "events": [
           "job.completed",
           "job.failed",
@@ -11,7 +11,7 @@
         ]
       },
       "id": "video-callback",
-      "name": "AI Video Engine Trigger",
+      "name": "Mewocamm Video Editor Trigger",
       "type": "n8n-nodes-ai-video-engine.aiVideoEngineTrigger",
       "typeVersion": 1,
       "position": [480, 300]
@@ -27,7 +27,7 @@
         "translatorService": "google",
         "ttsVoice": "vi-VN-HoaiMyNeural",
         "ttsRate": "-5%",
-        "webhookUrl": "https://YOUR_N8N_HOST/webhook/ai-video-engine-callback",
+        "webhookUrl": "https://YOUR_N8N_HOST/webhook/mewocamm-video-callback",
         "outputMode": "job"
       },
       "id": "create-dubbing",
@@ -38,7 +38,7 @@
       "credentials": {
         "aiVideoEngineApi": {
           "id": "REPLACE_WITH_CREDENTIAL_ID",
-          "name": "AI Video Engine API"
+          "name": "Mewocamm Video Editor API"
         }
       }
     }

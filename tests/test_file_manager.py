@@ -17,3 +17,15 @@ class FileManagerTests(unittest.TestCase):
         self.assertEqual(manager.step_file("synced_audio").name, "06_synced.wav")
         self.assertEqual(manager.step_file("mixed_audio").name, "07_mixed.wav")
         self.assertEqual(manager.step_file("final").name, "final.mp4")
+
+    def test_classify_path_returns_portable_relative_path(self) -> None:
+        root = make_test_root("file-manager-portable")
+        manager = FileManager(root / "temp", root / "output", "job-123")
+        nested = manager.output("segments") / "segment_001.mp4"
+        nested.parent.mkdir(parents=True, exist_ok=True)
+        nested.write_bytes(b"segment")
+
+        scope, relative_path = manager.classify_path(nested)
+
+        self.assertEqual(scope, "output")
+        self.assertEqual(relative_path, "segments/segment_001.mp4")

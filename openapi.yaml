@@ -1,687 +1,620 @@
 openapi: 3.1.0
 info:
-  title: AI Video Engine API
-  version: "2.0"
-  description: API for creating, monitoring, cancelling, and administering AI video processing jobs.
-servers:
-  - url: http://localhost:6666
-    description: Local development
-  - url: https://{domain}
-    description: Production with custom domain
-    variables:
-      domain:
-        default: your-server.com
-security:
-  - ApiKeyHeader: []
-  - BearerAuth: []
-tags:
-  - name: health
-  - name: jobs
-  - name: admin
-  - name: metrics
+  title: AI Video Engine
+  version: 0.1.0
 paths:
   /health:
     get:
-      tags: [health]
-      operationId: getHealth
-      summary: Health check
-      security: []
+      summary: Health
+      operationId: health_health_get
       responses:
-        "200":
-          description: API is healthy.
+        '200':
+          description: Successful Response
           content:
             application/json:
               schema:
+                additionalProperties:
+                  type: string
                 type: object
-                required: [status]
-                properties:
-                  status:
-                    type: string
-                    const: ok
-  /metrics:
-    get:
-      tags: [metrics]
-      operationId: getMetrics
-      summary: Prometheus metrics
-      security: []
-      responses:
-        "200":
-          description: Prometheus text format metrics.
-          content:
-            text/plain:
-              schema:
-                type: string
+                title: Response Health Health Get
   /jobs:
     post:
-      tags: [jobs]
-      operationId: createJob
-      summary: Create a job
+      tags:
+      - jobs
+      summary: Create Job
+      operationId: create_job_jobs_post
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/CreateJobRequest"
-            examples:
-              lowLevelCut:
-                value:
-                  pipeline_type: low_level
-                  input_uri: https://example.com/video.mp4
-                  payload:
-                    operations:
-                      - id: cut-main
-                        type: cut
-                        params:
-                          start: 0
-                          duration: 3
+              $ref: '#/components/schemas/CreateJobRequest'
       responses:
-        "200":
-          description: Job created.
+        '200':
+          description: Successful Response
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/JobResponse"
-        "400":
-          $ref: "#/components/responses/BadRequest"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "429":
-          $ref: "#/components/responses/RateLimited"
+                $ref: '#/components/schemas/JobResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
     get:
-      tags: [jobs]
-      operationId: listJobs
-      summary: List jobs
+      tags:
+      - jobs
+      summary: List Jobs
+      operationId: list_jobs_jobs_get
       parameters:
-        - $ref: "#/components/parameters/StatusQuery"
-        - $ref: "#/components/parameters/LimitQuery"
+      - name: status
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Status
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 200
+          minimum: 1
+          default: 50
+          title: Limit
       responses:
-        "200":
-          description: Job list.
+        '200':
+          description: Successful Response
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/JobListResponse"
-        "400":
-          $ref: "#/components/responses/BadRequest"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
+                $ref: '#/components/schemas/JobListResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /jobs/upload:
     post:
-      tags: [jobs]
-      operationId: uploadJob
-      summary: Upload a file and create a job
+      tags:
+      - jobs
+      summary: Upload Job
+      operationId: upload_job_jobs_upload_post
       requestBody:
-        required: true
         content:
           multipart/form-data:
             schema:
-              type: object
-              required: [file]
-              properties:
-                file:
-                  type: string
-                  format: binary
-                pipeline_type:
-                  type: string
-                  default: dubbing
-                payload_json:
-                  type: string
-                  default: "{}"
-                metadata_json:
-                  type: string
-                  default: "{}"
+              $ref: '#/components/schemas/Body_upload_job_jobs_upload_post'
+        required: true
       responses:
-        "200":
-          description: Job created from upload.
+        '200':
+          description: Successful Response
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/JobResponse"
-        "400":
-          $ref: "#/components/responses/BadRequest"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "413":
-          $ref: "#/components/responses/PayloadTooLarge"
+                $ref: '#/components/schemas/JobResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /jobs/{job_id}:
     get:
-      tags: [jobs]
-      operationId: getJob
-      summary: Get a job
+      tags:
+      - jobs
+      summary: Get Job
+      operationId: get_job_jobs__job_id__get
       parameters:
-        - $ref: "#/components/parameters/JobId"
+      - name: job_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Job Id
       responses:
-        "200":
-          description: Job details.
+        '200':
+          description: Successful Response
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/JobResponse"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "404":
-          $ref: "#/components/responses/NotFound"
+                $ref: '#/components/schemas/JobResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /jobs/{job_id}/retry:
+    post:
+      tags:
+      - jobs
+      summary: Retry Job
+      operationId: retry_job_jobs__job_id__retry_post
+      parameters:
+      - name: job_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Job Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /jobs/{job_id}/stream:
     get:
-      tags: [jobs]
-      operationId: streamJob
-      summary: Stream job progress with Server-Sent Events
+      tags:
+      - jobs
+      summary: Stream Job Progress
+      operationId: stream_job_progress_jobs__job_id__stream_get
       parameters:
-        - $ref: "#/components/parameters/JobId"
+      - name: job_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Job Id
       responses:
-        "200":
-          description: SSE stream. Each data frame contains job progress JSON.
+        '200':
+          description: Successful Response
           content:
-            text/event-stream:
-              schema:
-                type: string
-              examples:
-                progress:
-                  value: "data: {\"id\":\"job-id\",\"progress\":50,\"status\":\"running\"}\n\n"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-  /jobs/{job_id}/cancel:
-    post:
-      tags: [jobs]
-      operationId: cancelJob
-      summary: Request job cancellation
-      parameters:
-        - $ref: "#/components/parameters/JobId"
-      responses:
-        "200":
-          description: Cancellation requested.
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/CancelJobResponse"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "404":
-          $ref: "#/components/responses/NotFound"
+                $ref: '#/components/schemas/HTTPValidationError'
+  /jobs/{job_id}/cancel:
+    post:
+      tags:
+      - jobs
+      summary: Cancel Job
+      operationId: cancel_job_jobs__job_id__cancel_post
+      parameters:
+      - name: job_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Job Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CancelJobResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /admin:
     get:
-      tags: [admin]
-      operationId: getAdminDashboard
-      summary: HTML admin dashboard
+      tags:
+      - admin
+      summary: Admin Dashboard
+      operationId: admin_dashboard_admin_get
       responses:
-        "200":
-          description: Admin dashboard HTML.
+        '200':
+          description: Successful Response
           content:
             text/html:
               schema:
                 type: string
-        "401":
-          $ref: "#/components/responses/Unauthorized"
   /admin/jobs:
     get:
-      tags: [admin]
-      operationId: adminListJobs
-      summary: Admin job list
+      tags:
+      - admin
+      summary: Admin Jobs
+      operationId: admin_jobs_admin_jobs_get
       parameters:
-        - $ref: "#/components/parameters/StatusQuery"
-        - name: limit
-          in: query
-          required: false
-          schema:
-            type: integer
-            minimum: 1
-            maximum: 500
-            default: 100
+      - name: status
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Status
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 500
+          minimum: 1
+          default: 100
+          title: Limit
       responses:
-        "200":
-          description: Admin job list.
+        '200':
+          description: Successful Response
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/JobListResponse"
-        "400":
-          $ref: "#/components/responses/BadRequest"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
+                $ref: '#/components/schemas/JobListResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /admin/jobs/{job_id}/assets:
     get:
-      tags: [admin]
-      operationId: adminJobAssets
-      summary: List assets for one job
+      tags:
+      - admin
+      summary: Admin Job Assets
+      operationId: admin_job_assets_admin_jobs__job_id__assets_get
       parameters:
-        - $ref: "#/components/parameters/JobId"
+      - name: job_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Job Id
       responses:
-        "200":
-          description: Asset records.
+        '200':
+          description: Successful Response
           content:
             application/json:
               schema:
                 type: object
-                required: [items]
-                properties:
-                  items:
-                    type: array
-                    items:
-                      $ref: "#/components/schemas/AssetRecord"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
+                additionalProperties: true
+                title: Response Admin Job Assets Admin Jobs  Job Id  Assets Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /admin/events:
     get:
-      tags: [admin]
-      operationId: adminEvents
-      summary: List recent events
+      tags:
+      - admin
+      summary: Admin Events
+      operationId: admin_events_admin_events_get
       parameters:
-        - name: event_type
-          in: query
-          required: false
-          schema:
-            type: string
-        - name: limit
-          in: query
-          required: false
-          schema:
-            type: integer
-            minimum: 1
-            maximum: 500
-            default: 100
+      - name: event_type
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Event Type
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 500
+          minimum: 1
+          default: 100
+          title: Limit
       responses:
-        "200":
-          description: Event records.
+        '200':
+          description: Successful Response
           content:
             application/json:
               schema:
                 type: object
-                required: [items]
-                properties:
-                  items:
-                    type: array
-                    items:
-                      $ref: "#/components/schemas/EventRecord"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
+                additionalProperties: true
+                title: Response Admin Events Admin Events Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /admin/jobs/{job_id}/cleanup:
     delete:
-      tags: [admin]
-      operationId: adminCleanupJob
-      summary: Delete temp and output folders for a job
+      tags:
+      - admin
+      summary: Admin Job Cleanup
+      operationId: admin_job_cleanup_admin_jobs__job_id__cleanup_delete
       parameters:
-        - $ref: "#/components/parameters/JobId"
+      - name: job_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Job Id
       responses:
-        "200":
-          description: Cleanup result.
+        '200':
+          description: Successful Response
           content:
             application/json:
               schema:
                 type: object
-                required: [job_id, status, deleted_temp, deleted_output]
-                properties:
-                  job_id:
-                    type: string
-                  status:
-                    type: string
-                    example: success
-                  deleted_temp:
-                    type: boolean
-                  deleted_output:
-                    type: boolean
-        "401":
-          $ref: "#/components/responses/Unauthorized"
+                additionalProperties: true
+                title: Response Admin Job Cleanup Admin Jobs  Job Id  Cleanup Delete
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
 components:
-  securitySchemes:
-    ApiKeyHeader:
-      type: apiKey
-      in: header
-      name: X-API-Key
-    BearerAuth:
-      type: http
-      scheme: bearer
-  parameters:
-    JobId:
-      name: job_id
-      in: path
-      required: true
-      schema:
-        type: string
-      description: Job ID.
-    StatusQuery:
-      name: status
-      in: query
-      required: false
-      schema:
-        $ref: "#/components/schemas/JobStatus"
-    LimitQuery:
-      name: limit
-      in: query
-      required: false
-      schema:
-        type: integer
-        minimum: 1
-        maximum: 200
-        default: 50
-  responses:
-    BadRequest:
-      description: Invalid request.
-      content:
-        application/json:
-          schema:
-            $ref: "#/components/schemas/ErrorResponse"
-    Unauthorized:
-      description: Missing or invalid API key.
-      content:
-        application/json:
-          schema:
-            $ref: "#/components/schemas/ErrorResponse"
-    NotFound:
-      description: Resource not found.
-      content:
-        application/json:
-          schema:
-            $ref: "#/components/schemas/ErrorResponse"
-    PayloadTooLarge:
-      description: Uploaded file exceeds configured limit.
-      content:
-        application/json:
-          schema:
-            $ref: "#/components/schemas/ErrorResponse"
-    RateLimited:
-      description: Rate limit exceeded.
-      content:
-        application/json:
-          schema:
-            $ref: "#/components/schemas/ErrorResponse"
   schemas:
-    JobStatus:
-      type: string
-      enum: [pending, running, done, failed, cancelled]
-    CreateJobRequest:
-      type: object
+    Body_upload_job_jobs_upload_post:
       properties:
+        file:
+          type: string
+          contentMediaType: application/octet-stream
+          title: File
         pipeline_type:
           type: string
+          title: Pipeline Type
           default: dubbing
-        source_sha256:
-          type: [string, "null"]
-          description: Direct source SHA-256, only accepted when explicitly enabled.
-        input_path:
-          type: [string, "null"]
-          description: Local input path, only accepted when explicitly enabled.
-        input_uri:
-          type: [string, "null"]
-          description: Remote source URI.
-        source_key:
-          type: [string, "null"]
-          description: Artifact store key for an already uploaded source.
-        payload:
-          type: object
-          additionalProperties: true
-          default: {}
-        metadata:
-          type: object
-          additionalProperties: true
-          default: {}
-        priority:
-          type: [integer, "null"]
-          minimum: 0
-          maximum: 10
-      additionalProperties: false
-    JobResponse:
+        payload_json:
+          type: string
+          title: Payload Json
+          default: '{}'
+        metadata_json:
+          type: string
+          title: Metadata Json
+          default: '{}'
       type: object
       required:
-        - id
-        - status
-        - pipeline_type
-        - priority
-        - payload
-        - source_sha256
-        - cancel_requested
-        - attempt_count
-        - progress
-        - step_index
-        - total_steps
-        - metadata
-        - created_at
-        - updated_at
+      - file
+      title: Body_upload_job_jobs_upload_post
+    CancelJobResponse:
       properties:
         id:
           type: string
-        status:
-          $ref: "#/components/schemas/JobStatus"
-        pipeline_type:
-          type: string
-        priority:
-          type: integer
-        payload:
-          type: object
-          additionalProperties: true
-        input_path:
-          type: [string, "null"]
-        input_uri:
-          type: [string, "null"]
-        output_path:
-          type: [string, "null"]
-        source_sha256:
-          type: string
-        pid:
-          type: [integer, "null"]
-        worker_id:
-          type: [string, "null"]
-        lease_expires_at:
-          type: [string, "null"]
-          format: date-time
+          title: Id
         cancel_requested:
           type: boolean
+          title: Cancel Requested
+        status:
+          type: string
+          title: Status
+      type: object
+      required:
+      - id
+      - cancel_requested
+      - status
+      title: CancelJobResponse
+    CreateJobRequest:
+      properties:
+        pipeline_type:
+          type: string
+          title: Pipeline Type
+          default: dubbing
+        source_sha256:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Source Sha256
+        input_path:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Input Path
+        input_uri:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Input Uri
+        source_key:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Source Key
+        payload:
+          additionalProperties: true
+          type: object
+          title: Payload
+        metadata:
+          additionalProperties: true
+          type: object
+          title: Metadata
+        priority:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Priority
+      type: object
+      title: CreateJobRequest
+    HTTPValidationError:
+      properties:
+        detail:
+          items:
+            $ref: '#/components/schemas/ValidationError'
+          type: array
+          title: Detail
+      type: object
+      title: HTTPValidationError
+    JobListResponse:
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/JobResponse'
+          type: array
+          title: Items
+      type: object
+      required:
+      - items
+      title: JobListResponse
+    JobResponse:
+      properties:
+        id:
+          type: string
+          title: Id
+        status:
+          type: string
+          title: Status
+        pipeline_type:
+          type: string
+          title: Pipeline Type
+        priority:
+          type: integer
+          title: Priority
+          default: 0
+        payload:
+          additionalProperties: true
+          type: object
+          title: Payload
+        input_path:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Input Path
+        input_uri:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Input Uri
+        output_path:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Output Path
+        source_sha256:
+          type: string
+          title: Source Sha256
+        pid:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Pid
+        worker_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Worker Id
+        lease_expires_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Lease Expires At
+        cancel_requested:
+          type: boolean
+          title: Cancel Requested
         attempt_count:
           type: integer
+          title: Attempt Count
         progress:
           type: integer
-          minimum: 0
-          maximum: 100
+          title: Progress
         step_index:
           type: integer
+          title: Step Index
         total_steps:
           type: integer
+          title: Total Steps
         current_step:
-          type: [string, "null"]
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Current Step
         log:
-          type: [string, "null"]
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Log
         error:
-          type: [string, "null"]
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Error
         error_detail:
           anyOf:
-            - $ref: "#/components/schemas/JobError"
-            - type: "null"
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          title: Error Detail
         metadata:
-          type: object
           additionalProperties: true
+          type: object
+          title: Metadata
+        is_terminal:
+          type: boolean
+          title: Is Terminal
+          default: false
+        can_cancel:
+          type: boolean
+          title: Can Cancel
+          default: false
+        can_retry:
+          type: boolean
+          title: Can Retry
+          default: false
         created_at:
           type: string
           format: date-time
+          title: Created At
         started_at:
-          type: [string, "null"]
-          format: date-time
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Started At
         finished_at:
-          type: [string, "null"]
-          format: date-time
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Finished At
         updated_at:
           type: string
           format: date-time
-    JobListResponse:
+          title: Updated At
       type: object
-      required: [items]
+      required:
+      - id
+      - status
+      - pipeline_type
+      - source_sha256
+      - cancel_requested
+      - attempt_count
+      - progress
+      - step_index
+      - total_steps
+      - created_at
+      - updated_at
+      title: JobResponse
+    ValidationError:
       properties:
-        items:
-          type: array
+        loc:
           items:
-            $ref: "#/components/schemas/JobResponse"
-    CancelJobResponse:
-      type: object
-      required: [id, cancel_requested, status]
-      properties:
-        id:
-          type: string
-        cancel_requested:
-          type: boolean
-        status:
-          $ref: "#/components/schemas/JobStatus"
-    JobError:
-      type: object
-      required: [code, message, retriable]
-      properties:
-        code:
-          type: string
-          example: FFMPEG_FAILED
-        message:
-          type: string
-        step:
-          type: [string, "null"]
-        retriable:
-          type: boolean
-          default: false
-    ResultItem:
-      type: object
-      required: [id, operation_id, kind, label, path, media_type]
-      properties:
-        id:
-          type: string
-        operation_id:
-          type: string
-        kind:
-          type: string
-        label:
-          type: string
-        path:
-          type: string
-        media_type:
-          type: string
-          enum: [video, audio, image, text, directory, file]
-        artifact_scope:
-          type: [string, "null"]
-        relative_path:
-          type: [string, "null"]
-        duration:
-          type: [number, "null"]
-        width:
-          type: [integer, "null"]
-        height:
-          type: [integer, "null"]
-        language:
-          type: [string, "null"]
-        role:
-          type: [string, "null"]
-        metadata:
-          type: object
-          additionalProperties: true
-    WebhookPayload:
-      type: object
-      required: [event, job_id, status, output_path, metadata, error, error_detail]
-      properties:
-        event:
-          type: string
-          enum: [job.completed, job.failed, job.cancelled]
-        job_id:
-          type: string
-        status:
-          $ref: "#/components/schemas/JobStatus"
-        output_path:
-          type: [string, "null"]
-        metadata:
-          type: object
-          additionalProperties: true
-          properties:
-            result_items:
-              type: array
-              items:
-                $ref: "#/components/schemas/ResultItem"
-        error:
-          type: [string, "null"]
-        error_detail:
-          anyOf:
-            - $ref: "#/components/schemas/JobError"
-            - type: "null"
-    ProviderConfig:
-      type: object
-      properties:
-        provider:
-          type: string
-        api_key:
-          type: string
-          description: Secret value in requests; redacted in stored job payload.
-        api_key_source:
-          type: string
-          example: request
-        api_key_hint:
-          type: string
-          example: "***1234"
-        model:
-          type: string
-      additionalProperties: true
-    Operation:
-      type: object
-      properties:
-        id:
-          type: string
-        operation_id:
-          type: string
-          readOnly: true
-        type:
-          type: string
-        name:
-          type: string
-          readOnly: true
-        params:
-          type: object
-          additionalProperties: true
-        time_range:
-          $ref: "#/components/schemas/TimeRange"
-      additionalProperties: true
-    TimeRange:
-      type: object
-      properties:
-        start:
-          type: number
-          minimum: 0
-        end:
-          type: number
-          minimum: 0
-        duration:
-          type: number
-          exclusiveMinimum: 0
-    AssetRecord:
-      type: object
-      required: [asset_id, job_id, node_id, uri, kind, parents, metadata]
-      properties:
-        asset_id:
-          type: string
-        job_id:
-          type: string
-        node_id:
-          type: string
-        uri:
-          type: string
-        kind:
-          type: string
-        parents:
-          type: array
-          items:
-            type: string
-        metadata:
-          type: object
-          additionalProperties: true
-    EventRecord:
-      type: object
-      required: [type, payload, created_at]
-      properties:
-        type:
-          type: string
-        payload:
-          type: object
-          additionalProperties: true
-        created_at:
-          type: string
-          format: date-time
-    ErrorResponse:
-      type: object
-      required: [detail]
-      properties:
-        detail:
-          oneOf:
+            anyOf:
             - type: string
-            - type: array
-              items:
-                type: object
-                additionalProperties: true
+            - type: integer
+          type: array
+          title: Location
+        msg:
+          type: string
+          title: Message
+        type:
+          type: string
+          title: Error Type
+        input:
+          title: Input
+        ctx:
+          type: object
+          title: Context
+      type: object
+      required:
+      - loc
+      - msg
+      - type
+      title: ValidationError

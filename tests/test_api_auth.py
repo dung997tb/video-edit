@@ -49,6 +49,13 @@ class ApiAuthTests(unittest.TestCase):
                 response = client.get("/openapi.json")
         self.assertEqual(response.status_code, 401)
 
+    def test_metrics_is_public_when_auth_enabled(self):
+        services = _fake_services(auth_enabled=True)
+        with patch("api.main.get_services", return_value=services):
+            with TestClient(create_app()) as client:
+                response = client.get("/metrics")
+        self.assertEqual(response.status_code, 200)
+
     def test_protected_route_accepts_x_api_key(self):
         services = _fake_services(auth_enabled=True)
         with patch("api.main.get_services", return_value=services):

@@ -141,14 +141,14 @@ export async function pollJobUntilTerminal(
 	}
 
 	const status = lastJob ? ` Last status: ${lastJob.status}.` : '';
-	throw new Error(`Timed out waiting for AI Video Engine job after ${options.timeoutSeconds} seconds.${status}`);
+	throw new Error(`Timed out waiting for Mewocamm Video Editor job after ${options.timeoutSeconds} seconds.${status}`);
 }
 
 export function jobErrorMessage(job: JobResponse): string {
 	const detail = job.error_detail;
 	const detailMessage = detail && typeof detail.message === 'string' ? detail.message : undefined;
 	const code = detail && typeof detail.code === 'string' ? ` (${detail.code})` : '';
-	return `AI Video Engine job ${job.id} ended with status ${job.status}${code}: ${detailMessage ?? job.error ?? 'No error detail returned'}`;
+	return `Mewocamm Video Editor job ${job.id} ended with status ${job.status}${code}: ${detailMessage ?? job.error ?? 'No error detail returned'}`;
 }
 
 export function buildLowLevelOperations(input: IDataObject): IDataObject[] {

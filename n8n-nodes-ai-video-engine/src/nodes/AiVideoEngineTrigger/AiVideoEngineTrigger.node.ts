@@ -10,14 +10,14 @@ import { NodeConnectionTypes } from 'n8n-workflow';
 
 export class AiVideoEngineTrigger implements INodeType {
 	description: INodeTypeDescription = {
-		displayName: 'AI Video Engine Trigger',
+		displayName: 'Mewocamm Video Editor Trigger',
 		name: 'aiVideoEngineTrigger',
 		icon: 'file:aiVideoEngine.svg',
 		group: ['trigger'],
 		version: 1,
-		description: 'Starts a workflow when AI Video Engine posts a job callback',
+		description: 'Nhận callback khi job video hoàn tất, lỗi hoặc bị hủy.',
 		defaults: {
-			name: 'AI Video Engine Trigger',
+			name: 'Mewocamm Video Editor Trigger',
 		},
 		inputs: [],
 		outputs: [NodeConnectionTypes.Main],
@@ -25,6 +25,7 @@ export class AiVideoEngineTrigger implements INodeType {
 			{
 				name: 'default',
 				httpMethod: 'POST',
+				isFullPath: true,
 				responseMode: 'onReceived',
 				responseData: 'noData',
 				path: '={{$parameter["path"]}}',
@@ -35,9 +36,9 @@ export class AiVideoEngineTrigger implements INodeType {
 				displayName: 'Path',
 				name: 'path',
 				type: 'string',
-				default: 'ai-video-engine-callback',
+				default: 'mewocamm-video-callback',
 				required: true,
-				description: 'Webhook path to paste into AI Video Engine jobs as payload.webhook_url',
+				description: 'Đường dẫn webhook để dán vào payload.webhook_url khi tạo job Mewocamm.',
 			},
 			{
 				displayName: 'Events',
@@ -47,18 +48,21 @@ export class AiVideoEngineTrigger implements INodeType {
 					{
 						name: 'Completed',
 						value: 'job.completed',
+						description: 'Kích hoạt workflow khi job hoàn tất thành công.',
 					},
 					{
 						name: 'Failed',
 						value: 'job.failed',
+						description: 'Kích hoạt workflow khi job kết thúc lỗi.',
 					},
 					{
 						name: 'Cancelled',
 						value: 'job.cancelled',
+						description: 'Kích hoạt workflow khi job bị hủy.',
 					},
 				],
 				default: ['job.completed', 'job.failed', 'job.cancelled'],
-				description: 'Events allowed to start this workflow',
+				description: 'Chọn loại callback được phép kích hoạt workflow này.',
 			},
 		],
 	};

@@ -1,6 +1,8 @@
-# 🎬 AI Video Automation Engine (v2.0)
+# 🎬 Mewocamm Video Editor
 
-Một hệ thống tự động hóa xử lý video bằng AI chuẩn **Production-Ready**, hỗ trợ kiến trúc phân tán (multi-replica), quản lý hàng đợi bằng Supabase, tính năng phục hồi lỗi theo từng bước (step-level idempotency) và quản trị tiến trình FFmpeg an toàn.
+**Mewocamm Video Editor** là hệ thống tự động hóa xử lý video bằng AI, có FastAPI backend, worker FFmpeg, hàng đợi job và bộ node n8n để dựng workflow video end-to-end.
+
+Trước đây package/node public dùng tên **AI Video Engine**. Tên mới dùng cho GitHub/docs/n8n UI là **Mewocamm Video Editor**, còn internal API/node identifiers vẫn giữ tương thích ngược để workflow cũ không bị gãy.
 
 ---
 
@@ -16,10 +18,13 @@ Một hệ thống tự động hóa xử lý video bằng AI chuẩn **Producti
 
 ## 📚 Tài Liệu Hướng Dẫn (Documentation)
 
-Hệ thống đi kèm với 2 bộ tài liệu chi tiết (Tiếng Việt) để bạn dễ dàng nắm bắt:
+Hệ thống đi kèm tài liệu tiếng Việt để chạy backend, gọi API và dùng n8n custom node:
 
-1. 📖 **[Hướng Dẫn Sử Dụng (USAGE_GUIDE.md)](USAGE_GUIDE.md)**: Hướng dẫn cài đặt cấu hình `.env`, chạy qua Local CLI, khởi động Server và giải thích các Payload.
-2. 📡 **[Tài Liệu API (API_REFERENCE.md)](API_REFERENCE.md)**: Chứa toàn bộ các endpoints, Request/Response mẫu, mã lỗi HTTP và ví dụ dùng cURL/JavaScript.
+1. 📡 **[API Guide tiếng Việt](docs/API_GUIDE.vi.md)**: hướng dẫn gọi `POST /jobs`, upload, wait, cancel, callback và đọc `metadata.result_items[]`.
+2. 🔗 **[n8n Custom Nodes Guide](docs/N8N_CUSTOM_NODES_GUIDE.vi.md)**: cài đặt và dùng node **Mewocamm Video Editor** trong n8n.
+3. 🧪 **[n8n Real Video Manual Tests](docs/N8N_REAL_VIDEO_MANUAL_TESTS.md)**: cách chạy và đọc evidence test bằng video thật.
+4. 📖 **[Hướng Dẫn Sử Dụng (USAGE_GUIDE.md)](USAGE_GUIDE.md)**: hướng dẫn cài đặt cấu hình `.env`, chạy CLI/backend và giải thích payload.
+5. 📡 **[Tài Liệu API cũ (API_REFERENCE.md)](API_REFERENCE.md)**: reference endpoint chi tiết nếu file này có trong checkout của bạn.
 
 ---
 
@@ -99,6 +104,7 @@ Sử dụng Supabase làm Database lưu hàng đợi (PostgreSQL) và Storage. A
 ```env
 JOB_BACKEND=supabase
 ARTIFACT_STORE_BACKEND=supabase
+SECRET_STORE_BACKEND=supabase
 SUPABASE_URL=https://<your-id>.supabase.co
 SUPABASE_KEY=<your-service-role-key>
 ```
@@ -109,6 +115,8 @@ SUPABASE_KEY=<your-service-role-key>
 ## 🛡️ Bảo Mật
 - Các Endpoint được bảo vệ bằng `X-API-Key`.
 - Giao thức nhận dạng đầu vào giới hạn khắt khe qua `API_ALLOWED_INPUT_URI_SCHEMES` (tránh SSRF).
+- Mặc định chặn URL private/localhost cho `input_uri` và `webhook_url`; chỉ bật `API_ALLOW_PRIVATE_NETWORK_URLS=true` cho local dev có kiểm soát.
+- Khi `JOB_BACKEND=supabase` và `API_EMBEDDED_WORKER=false`, per-job provider key yêu cầu `SECRET_STORE_BACKEND=supabase`.
 - Tích hợp Rate Limiting và chặn truy cập file hệ thống (`API_ALLOW_INPUT_PATH=false`).
 
 ---

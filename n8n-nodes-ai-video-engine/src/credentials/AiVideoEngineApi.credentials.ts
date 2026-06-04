@@ -8,9 +8,9 @@ import type {
 export class AiVideoEngineApi implements ICredentialType {
 	name = 'aiVideoEngineApi';
 
-	displayName = 'AI Video Engine API';
+	displayName = 'Mewocamm Video Editor API';
 
-	documentationUrl = 'https://github.com/your-org/ai-video-engine/tree/main/n8n-nodes-ai-video-engine';
+	documentationUrl = 'https://github.com/dung997tb/video-edit/tree/main/n8n-nodes-ai-video-engine';
 
 	properties: INodeProperties[] = [
 		{
@@ -19,7 +19,7 @@ export class AiVideoEngineApi implements ICredentialType {
 			type: 'string',
 			default: 'http://localhost:6666',
 			placeholder: 'https://api.example.com',
-			description: 'Base URL of the AI Video Engine FastAPI service',
+			description: 'URL API backend Mewocamm Video Editor, ví dụ http://localhost:6666 hoặc http://host.docker.internal:6666 khi n8n chạy Docker.',
 			required: true,
 		},
 		{
@@ -37,7 +37,7 @@ export class AiVideoEngineApi implements ICredentialType {
 				},
 			],
 			default: 'apiKey',
-			description: 'Header format used by the AI Video Engine API',
+			description: 'Cách gửi khóa xác thực tới API Mewocamm. Mặc định dùng header X-API-Key.',
 		},
 		{
 			displayName: 'API Key',
@@ -48,7 +48,7 @@ export class AiVideoEngineApi implements ICredentialType {
 			},
 			default: '',
 			required: true,
-			description: 'Value of API_SECRET_KEY configured on the AI Video Engine server',
+			description: 'Khóa API_SECRET_KEY đang cấu hình trên backend Mewocamm Video Editor.',
 		},
 	];
 

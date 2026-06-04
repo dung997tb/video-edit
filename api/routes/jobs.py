@@ -5,19 +5,20 @@ import json
 import tempfile
 import asyncio
 from pathlib import Path
-from urllib.parse import urlparse
 
 from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import StreamingResponse
 
 from api.schemas import CancelJobResponse, CreateJobRequest, JobListResponse, JobResponse
+from core.artifact_key import normalize_artifact_key
 from core.key_redactor import split_redacted_secrets
 from core.metrics import metrics
 from core.models import JobStatus
 from core.payload_parser import parse_job_payload
 from core.runtime import get_services
 from core.source_identity import resolve_source_sha256
+from core.url_security import validate_url_access
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
 UPLOAD_CHUNK_BYTES = 1024 * 1024
@@ -30,19 +31,77 @@ def _validate_pipeline_type(pipeline_type: str, services) -> None:
 
 
 def _validate_input_uri(input_uri: str | None, services) -> None:
-    if not input_uri:
-        return
     allowed = {
         item.strip().lower()
         for item in str(getattr(services.settings, "api_allowed_input_uri_schemes", "http,https")).split(",")
         if item.strip()
     }
-    parsed = urlparse(input_uri)
-    if parsed.scheme.lower() not in allowed:
-        raise HTTPException(status_code=400, detail=f"input_uri scheme is not allowed: {parsed.scheme}")
+    try:
+        validate_url_access(
+            input_uri,
+            allowed_schemes=allowed,
+            allow_private_networks=bool(getattr(services.settings, "api_allow_private_network_urls", False)),
+            field_name="input_uri",
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+def _validate_webhook_urls(payload: dict, metadata: dict, services) -> None:
+    allowed = {"http", "https"}
+    allow_private = bool(getattr(services.settings, "api_allow_private_network_urls", False))
+    for field_name, value in (
+        ("payload.webhook_url", payload.get("webhook_url")),
+        ("metadata.webhook_url", metadata.get("webhook_url")),
+    ):
+        try:
+            validate_url_access(
+                str(value) if value else None,
+                allowed_schemes=allowed,
+                allow_private_networks=allow_private,
+                field_name=field_name,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+def _validate_low_level_operations(payload: dict) -> None:
+    from modules.video.low_level import VIDEO_OPERATION_MODULES
+
+    operations = payload.get("operations")
+    if not isinstance(operations, list) or not operations:
+        raise HTTPException(status_code=400, detail="low_level pipeline requires at least one operation")
+    for index, operation in enumerate(operations):
+        if not isinstance(operation, dict):
+            raise HTTPException(status_code=400, detail=f"operation[{index}] must be an object")
+        params = operation.get("params", {})
+        if params is None:
+            params = {}
+        if not isinstance(params, dict):
+            raise HTTPException(status_code=400, detail=f"operation[{index}].params must be an object")
+        name = str(operation.get("name", operation.get("type", params.get("name", params.get("type", ""))))).strip().lower()
+        if not name:
+            raise HTTPException(status_code=400, detail=f"operation[{index}]: missing 'name' or 'type'")
+        if name not in VIDEO_OPERATION_MODULES:
+            supported = ", ".join(sorted(VIDEO_OPERATION_MODULES.keys()))
+            raise HTTPException(status_code=400, detail=f"operation[{index}]: unsupported '{name}'. supported: {supported}")
+
+
+def _job_response(job) -> JobResponse:
+    data = job.to_dict()
+    status = job.status
+    data["is_terminal"] = status.is_terminal
+    data["can_cancel"] = status in {JobStatus.PENDING, JobStatus.RUNNING}
+    data["can_retry"] = bool(
+        status == JobStatus.FAILED
+        and job.error_detail is not None
+        and job.error_detail.retriable
+    )
+    return JobResponse(**data)
 
 
 def _prepare_payload_and_metadata(
+    services,
     payload: dict,
     metadata: dict,
     *,
@@ -52,19 +111,47 @@ def _prepare_payload_and_metadata(
         parsed_payload = parse_job_payload(payload)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    if source_key:
-        parsed_payload["source_key"] = source_key
+    try:
+        if source_key:
+            parsed_payload["source_key"] = normalize_artifact_key(source_key)
+        elif parsed_payload.get("source_key"):
+            parsed_payload["source_key"] = normalize_artifact_key(str(parsed_payload["source_key"]))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    metadata = metadata or {}
+    _validate_webhook_urls(parsed_payload, metadata, services)
     redacted_payload, payload_secrets = split_redacted_secrets(parsed_payload)
-    redacted_metadata, metadata_secrets = split_redacted_secrets(metadata or {})
+    redacted_metadata, metadata_secrets = split_redacted_secrets(metadata)
     secrets = {f"payload.{key}": value for key, value in payload_secrets.items()}
     secrets.update({f"metadata.{key}": value for key, value in metadata_secrets.items()})
     return redacted_payload, redacted_metadata, secrets
 
 
 def _store_job_secrets(services, job_id: str, secrets: dict[str, str]) -> None:
+    _ensure_secret_store_supported(services, secrets)
     secret_store = getattr(services, "secret_store", None)
     if secret_store is not None:
         secret_store.put(job_id, secrets)
+
+
+def _ensure_secret_store_supported(services, secrets: dict[str, str]) -> None:
+    if secrets and _requires_persistent_secret_store(services):
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                "per-job provider secrets require SECRET_STORE_BACKEND=supabase when "
+                "JOB_BACKEND=supabase and API_EMBEDDED_WORKER=false"
+            ),
+        )
+
+
+def _requires_persistent_secret_store(services) -> bool:
+    settings = services.settings
+    return bool(
+        getattr(settings, "job_backend", "memory") == "supabase"
+        and not getattr(settings, "api_embedded_worker", True)
+        and getattr(settings, "secret_store_backend", "memory") != "supabase"
+    )
 
 
 @router.post("", response_model=JobResponse)
@@ -78,10 +165,14 @@ def create_job(request: CreateJobRequest) -> JobResponse:
             detail="input_path is disabled for API requests; use /jobs/upload, input_uri, or source_key",
         )
     payload, metadata, secrets = _prepare_payload_and_metadata(
+        services,
         dict(request.payload),
         dict(request.metadata),
         source_key=request.source_key,
     )
+    if request.pipeline_type == "low_level":
+        _validate_low_level_operations(payload)
+    _ensure_secret_store_supported(services, secrets)
     try:
         source_sha256 = resolve_source_sha256(
             source_sha256=request.source_sha256,
@@ -104,7 +195,7 @@ def create_job(request: CreateJobRequest) -> JobResponse:
     )
     _store_job_secrets(services, job.id, secrets)
     metrics.submitted(job.pipeline_type)
-    return JobResponse(**job.to_dict())
+    return _job_response(job)
 
 
 @router.post("/upload", response_model=JobResponse)
@@ -123,6 +214,8 @@ async def upload_job(
         raise HTTPException(status_code=400, detail="payload_json and metadata_json must be valid JSON") from exc
     if not isinstance(payload, dict) or not isinstance(metadata, dict):
         raise HTTPException(status_code=400, detail="payload_json and metadata_json must be JSON objects")
+    payload, metadata, secrets = _prepare_payload_and_metadata(services, payload, metadata)
+    _ensure_secret_store_supported(services, secrets)
 
     filename = Path(file.filename or "input.mp4").name
     max_bytes = max(1, int(getattr(services.settings, "api_upload_max_bytes", 536_870_912)))
@@ -164,7 +257,9 @@ async def upload_job(
         if staging_path is not None:
             staging_path.unlink(missing_ok=True)
         await file.close()
-    payload, metadata, secrets = _prepare_payload_and_metadata(payload, metadata, source_key=source_key)
+    payload["source_key"] = normalize_artifact_key(source_key)
+    if pipeline_type == "low_level":
+        _validate_low_level_operations(payload)
     job = services.job_manager.create_job(
         pipeline_type=pipeline_type,
         source_sha256=source_sha256,
@@ -173,7 +268,7 @@ async def upload_job(
     )
     _store_job_secrets(services, job.id, secrets)
     metrics.submitted(job.pipeline_type)
-    return JobResponse(**job.to_dict())
+    return _job_response(job)
 
 
 @router.get("", response_model=JobListResponse)
@@ -187,7 +282,7 @@ def list_jobs(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=f"invalid status: {status}") from exc
     jobs = services.job_manager.list_jobs(status=parsed_status, limit=limit)
-    return JobListResponse(items=[JobResponse(**job.to_dict()) for job in jobs])
+    return JobListResponse(items=[_job_response(job) for job in jobs])
 
 
 @router.get("/{job_id}", response_model=JobResponse)
@@ -196,7 +291,45 @@ def get_job(job_id: str) -> JobResponse:
     job = services.job_manager.get_job(job_id)
     if job is None:
         raise HTTPException(status_code=404, detail="job not found")
-    return JobResponse(**job.to_dict())
+    return _job_response(job)
+
+
+@router.post("/{job_id}/retry", response_model=JobResponse)
+def retry_job(job_id: str) -> JobResponse:
+    services = get_services()
+    old = services.job_manager.get_job(job_id)
+    if old is None:
+        raise HTTPException(status_code=404, detail="job not found")
+    if old.status != JobStatus.FAILED:
+        raise HTTPException(status_code=409, detail="only failed jobs can be retried")
+    if old.error_detail is None or not old.error_detail.retriable:
+        raise HTTPException(status_code=409, detail="this failure is not retriable")
+    metadata = dict(old.metadata)
+    metadata["retry_of"] = old.id
+    metadata["retry_count"] = int(metadata.get("retry_count", 0)) + 1
+    secret_store = getattr(services, "secret_store", None)
+    secrets_to_copy: dict[str, str] = {}
+    get_secrets = getattr(secret_store, "get", None)
+    if callable(get_secrets):
+        existing_secrets = get_secrets(old.id)
+        if isinstance(existing_secrets, dict):
+            secrets_to_copy = existing_secrets
+    _ensure_secret_store_supported(services, secrets_to_copy)
+    job = services.job_manager.create_job(
+        pipeline_type=old.pipeline_type,
+        source_sha256=old.source_sha256,
+        payload=dict(old.payload),
+        input_path=old.input_path,
+        input_uri=old.input_uri,
+        metadata=metadata,
+        priority=old.priority,
+        retry_of_job_id=old.id,
+    )
+    copy_secrets = getattr(secret_store, "copy", None)
+    if callable(copy_secrets):
+        copy_secrets(old.id, job.id)
+    metrics.submitted(job.pipeline_type)
+    return _job_response(job)
 
 
 @router.get("/{job_id}/stream")

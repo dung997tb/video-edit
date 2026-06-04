@@ -1,6 +1,7 @@
 import unittest
 
-from core.artifact_store import SupabaseArtifactStore
+from core.artifact_store import LocalArtifactStore, SupabaseArtifactStore
+from tests.helpers import make_test_root
 
 
 class _ErrorBucket:
@@ -44,6 +45,22 @@ class _PagedClient:
 
 
 class ArtifactStoreTests(unittest.TestCase):
+    def test_local_store_rejects_path_traversal_keys(self) -> None:
+        store = LocalArtifactStore(make_test_root("artifact-store") / "artifacts")
+
+        for key in ("../escape.mp4", "uploads/../escape.mp4", "/absolute.mp4", "C:/escape.mp4", "uploads\\x.mp4"):
+            with self.subTest(key=key):
+                with self.assertRaises(ValueError):
+                    store.upload_bytes(key, b"data")
+
+    def test_local_store_keeps_valid_keys_under_root(self) -> None:
+        root = make_test_root("artifact-store-valid")
+        store = LocalArtifactStore(root / "artifacts")
+
+        store.upload_bytes("uploads/hash/input.mp4", b"data")
+
+        self.assertEqual(store.download_bytes("uploads/hash/input.mp4"), b"data")
+
     def test_supabase_exists_returns_false_when_folder_is_missing(self) -> None:
         store = SupabaseArtifactStore(_ErrorClient(), "artifacts")
 

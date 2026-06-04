@@ -5,6 +5,8 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Any
 
+from core.artifact_key import normalize_artifact_key
+
 
 class ArtifactStore(ABC):
     @abstractmethod
@@ -46,7 +48,12 @@ class LocalArtifactStore(ArtifactStore):
         self.root.mkdir(parents=True, exist_ok=True)
 
     def _path(self, key: str) -> Path:
-        return self.root / key
+        normalized = normalize_artifact_key(key)
+        root = self.root.resolve()
+        path = (root / normalized).resolve()
+        if not path.is_relative_to(root):
+            raise ValueError("artifact key escapes artifact root")
+        return path
 
     def exists(self, key: str) -> bool:
         return self._path(key).exists()
@@ -66,6 +73,7 @@ class SupabaseArtifactStore(ArtifactStore):
         self.bucket = bucket
 
     def exists(self, key: str) -> bool:
+        key = normalize_artifact_key(key)
         folder, name = key.rsplit("/", 1) if "/" in key else ("", key)
         bucket = self.client.storage.from_(self.bucket)
         limit = 1000
@@ -84,6 +92,7 @@ class SupabaseArtifactStore(ArtifactStore):
             return False
 
     def upload_bytes(self, key: str, data: bytes, content_type: str = "application/octet-stream") -> None:
+        key = normalize_artifact_key(key)
         bucket = self.client.storage.from_(self.bucket)
         if self.exists(key):
             bucket.update(key, data, {"content-type": content_type})
@@ -91,4 +100,5 @@ class SupabaseArtifactStore(ArtifactStore):
         bucket.upload(key, data, {"content-type": content_type})
 
     def download_bytes(self, key: str) -> bytes:
+        key = normalize_artifact_key(key)
         return self.client.storage.from_(self.bucket).download(key)

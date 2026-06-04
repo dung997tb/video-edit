@@ -119,4 +119,35 @@ describe('shared helpers', () => {
 			),
 		).rejects.toThrow('FFMPEG_FAILED');
 	});
+
+	it('returns cancelled terminal jobs when terminal errors are allowed', async () => {
+		await expect(
+			pollJobUntilTerminal(
+				async () => ({
+					id: 'job-1',
+					status: 'cancelled',
+					error: 'cancelled by user',
+				}),
+				{ intervalSeconds: 1, timeoutSeconds: 1, failOnTerminalError: false },
+				async () => undefined,
+			),
+		).resolves.toMatchObject({ status: 'cancelled' });
+	});
+
+	it('times out with the last observed status', async () => {
+		await expect(
+			pollJobUntilTerminal(
+				async () => ({ id: 'job-1', status: 'running' }),
+				{ intervalSeconds: 1, timeoutSeconds: 1, failOnTerminalError: true },
+				async () => undefined,
+				(() => {
+					let calls = 0;
+					return () => {
+						calls += 1;
+						return calls <= 2 ? 0 : 1001;
+					};
+				})(),
+			),
+		).rejects.toThrow('Last status: running');
+	});
 });

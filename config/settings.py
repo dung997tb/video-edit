@@ -115,6 +115,8 @@ class Settings(BaseSettings):
     worker_poll_max_seconds: float = Field(default=1.0, alias="WORKER_POLL_MAX_SECONDS")
     worker_poll_backoff_factor: float = Field(default=1.5, alias="WORKER_POLL_BACKOFF_FACTOR")
     job_lease_seconds: int = Field(default=30, alias="JOB_LEASE_SECONDS")
+    max_job_attempts: int = Field(default=3, alias="MAX_JOB_ATTEMPTS")
+    max_job_duration_seconds: int = Field(default=3600, alias="MAX_JOB_DURATION_SECONDS")
     heartbeat_interval_seconds: float = Field(default=10.0, alias="HEARTBEAT_INTERVAL_SECONDS")
     cancel_grace_seconds: float = Field(default=5.0, alias="CANCEL_GRACE_SECONDS")
     step_retry_attempts: int = Field(default=2, alias="STEP_RETRY_ATTEMPTS")
@@ -130,11 +132,14 @@ class Settings(BaseSettings):
     api_allow_input_path: bool = Field(default=False, alias="API_ALLOW_INPUT_PATH")
     api_allow_client_source_sha256: bool = Field(default=False, alias="API_ALLOW_CLIENT_SOURCE_SHA256")
     api_allowed_input_uri_schemes: str = Field(default="http,https", alias="API_ALLOWED_INPUT_URI_SCHEMES")
+    api_allow_private_network_urls: bool = Field(default=False, alias="API_ALLOW_PRIVATE_NETWORK_URLS")
     api_upload_max_bytes: int = Field(default=536_870_912, alias="API_UPLOAD_MAX_BYTES")
     api_rate_limit_per_minute: int = Field(default=60, alias="API_RATE_LIMIT_PER_MINUTE")
 
     webhooks_enabled: bool = Field(default=False, alias="WEBHOOKS_ENABLED")
     webhook_timeout_seconds: float = Field(default=10.0, alias="WEBHOOK_TIMEOUT_SECONDS")
+    webhook_max_retries: int = Field(default=3, alias="WEBHOOK_MAX_RETRIES")
+    secret_store_backend: str = Field(default="memory", alias="SECRET_STORE_BACKEND")
 
     metrics_enabled: bool = Field(default=True, alias="METRICS_ENABLED")
     tracing_enabled: bool = Field(default=False, alias="TRACING_ENABLED")

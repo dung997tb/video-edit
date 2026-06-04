@@ -1,19 +1,19 @@
 {
   "name": "n8n-nodes-ai-video-engine",
   "version": "0.1.0",
-  "description": "n8n community nodes for creating, monitoring, and receiving callbacks from AI Video Engine jobs.",
+  "description": "n8n community nodes for creating, monitoring, and receiving callbacks from Mewocamm Video Editor jobs.",
   "license": "MIT",
-  "homepage": "https://github.com/your-org/ai-video-engine",
+  "homepage": "https://github.com/dung997tb/video-edit/tree/main/n8n-nodes-ai-video-engine",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/your-org/ai-video-engine.git",
+    "url": "git+https://github.com/dung997tb/video-edit.git",
     "directory": "n8n-nodes-ai-video-engine"
   },
   "bugs": {
-    "url": "https://github.com/your-org/ai-video-engine/issues"
+    "url": "https://github.com/dung997tb/video-edit/issues"
   },
   "author": {
-    "name": "AI Video Engine"
+    "name": "Mewocamm Video Editor"
   },
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -34,7 +34,9 @@
   "keywords": [
     "n8n-community-node-package",
     "n8n",
+    "mewocamm",
     "video",
+    "video-editor",
     "ai",
     "automation",
     "dubbing",

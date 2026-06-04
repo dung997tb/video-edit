@@ -17,6 +17,33 @@ class JobStatus(str, Enum):
     FAILED = "failed"
     CANCELLED = "cancelled"
 
+    @property
+    def is_terminal(self) -> bool:
+        return self in TERMINAL_JOB_STATUSES
+
+    def can_transition_to(self, target: "JobStatus") -> bool:
+        return target in JOB_STATUS_TRANSITIONS.get(self, frozenset())
+
+
+TERMINAL_JOB_STATUSES = frozenset({
+    JobStatus.DONE,
+    JobStatus.FAILED,
+    JobStatus.CANCELLED,
+})
+
+JOB_STATUS_TRANSITIONS: dict[JobStatus, frozenset[JobStatus]] = {
+    JobStatus.PENDING: frozenset({JobStatus.RUNNING, JobStatus.CANCELLED}),
+    JobStatus.RUNNING: frozenset({
+        JobStatus.DONE,
+        JobStatus.FAILED,
+        JobStatus.CANCELLED,
+        JobStatus.PENDING,
+    }),
+    JobStatus.DONE: frozenset(),
+    JobStatus.FAILED: frozenset(),
+    JobStatus.CANCELLED: frozenset(),
+}
+
 
 class JobErrorCode(str, Enum):
     TRANSCRIPTION_FAILED = "TRANSCRIPTION_FAILED"
@@ -27,6 +54,11 @@ class JobErrorCode(str, Enum):
     INPUT_NOT_FOUND = "INPUT_NOT_FOUND"
     CANCELLED = "CANCELLED"
     UNKNOWN = "UNKNOWN"
+    UNKNOWN_OPERATION = "UNKNOWN_OPERATION"
+    INVALID_PARAMS = "INVALID_PARAMS"
+    MAX_ATTEMPTS_EXCEEDED = "MAX_ATTEMPTS_EXCEEDED"
+    MAX_DURATION_EXCEEDED = "MAX_DURATION_EXCEEDED"
+    BUILD_WORKFLOW_FAILED = "BUILD_WORKFLOW_FAILED"
 
 
 @dataclass(slots=True)
@@ -35,6 +67,8 @@ class JobError:
     message: str
     step: str | None = None
     retriable: bool = False
+    stage: str | None = None
+    operation: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -46,6 +80,37 @@ class JobError:
             message=str(data.get("message") or ""),
             step=data.get("step"),
             retriable=bool(data.get("retriable", False)),
+            stage=data.get("stage"),
+            operation=data.get("operation"),
+        )
+
+    @classmethod
+    def unknown_operation(cls, op_name: str) -> "JobError":
+        return cls(
+            code=JobErrorCode.UNKNOWN_OPERATION.value,
+            message=f"unsupported operation '{op_name}'",
+            retriable=False,
+            stage="build_workflow",
+            operation=op_name,
+        )
+
+    @classmethod
+    def invalid_params(cls, message: str, *, operation: str | None = None) -> "JobError":
+        return cls(
+            code=JobErrorCode.INVALID_PARAMS.value,
+            message=message,
+            retriable=False,
+            stage="validation",
+            operation=operation,
+        )
+
+    @classmethod
+    def max_attempts(cls, attempts: int) -> "JobError":
+        return cls(
+            code=JobErrorCode.MAX_ATTEMPTS_EXCEEDED.value,
+            message=f"job exceeded {attempts} attempts",
+            retriable=False,
+            stage="execution",
         )
 
 
@@ -72,7 +137,11 @@ class JobRecord:
     log: str | None = None
     error: str | None = None
     error_detail: JobError | None = None
+    retry_of_job_id: str | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
+    terminal_notified: bool = False
+    webhook_attempts: int = 0
+    last_webhook_error: str | None = None
     created_at: datetime = field(default_factory=utcnow)
     started_at: datetime | None = None
     finished_at: datetime | None = None

@@ -9,6 +9,7 @@ REQUIRED_COLUMNS = (
     "id",
     "status",
     "pipeline_type",
+    "priority",
     "payload",
     "input_path",
     "input_uri",
@@ -23,15 +24,23 @@ REQUIRED_COLUMNS = (
     "step_index",
     "total_steps",
     "current_step",
+    "log",
     "error",
+    "error_detail",
     "metadata",
+    "terminal_notified",
+    "webhook_attempts",
+    "last_webhook_error",
     "created_at",
+    "started_at",
+    "finished_at",
     "updated_at",
 )
 REQUIRED_INDEXES = (
     "jobs_claim_lookup_idx",
     "jobs_worker_lookup_idx",
     "jobs_status_created_idx",
+    "jobs_priority_claim_idx",
 )
 VERIFY_RPC_NAME = "verify_jobs_schema_requirements"
 
@@ -65,6 +74,7 @@ def verify_supabase_jobs_schema(
     payload.setdefault("missing_columns", [])
     payload.setdefault("missing_indexes", [])
     payload.setdefault("table_exists", False)
+    payload.setdefault("secret_table_exists", False)
     payload.setdefault("trigger_exists", False)
     payload.setdefault("ok", False)
     return payload

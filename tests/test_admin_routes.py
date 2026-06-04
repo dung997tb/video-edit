@@ -55,7 +55,8 @@ class AdminRoutesTests(unittest.TestCase):
         client, services = self._client_and_services()
         done_job = services.job_manager.create_job(pipeline_type="dubbing", source_sha256="hash-done")
         pending_job = services.job_manager.create_job(pipeline_type="dubbing", source_sha256="hash-pending")
-        services.job_manager.complete_job(done_job.id, "output.mp4")
+        services.job_manager.claim_jobs("worker-a", limit=1, lease_seconds=30)
+        services.job_manager.complete_job(done_job.id, "output.mp4", worker_id="worker-a")
 
         response = client.get("/admin/jobs", params={"status": "done"})
 

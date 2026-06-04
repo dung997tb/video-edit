@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 from hmac import compare_digest
 
 from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 
 from api.middleware.rate_limit import InMemoryRateLimiter
 try:
@@ -88,6 +88,24 @@ def _enable_metrics(app: FastAPI) -> None:
     try:
         from prometheus_fastapi_instrumentator import Instrumentator
     except ImportError:
+        try:
+            from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
+        except ImportError:
+            @app.get("/metrics", include_in_schema=False)
+            def metrics_endpoint() -> Response:
+                return Response(
+                    "# HELP ai_video_engine_metrics_available Metrics fallback availability.\n"
+                    "# TYPE ai_video_engine_metrics_available gauge\n"
+                    "ai_video_engine_metrics_available 0\n",
+                    media_type="text/plain; version=0.0.4; charset=utf-8",
+                )
+
+            return
+
+        @app.get("/metrics", include_in_schema=False)
+        def metrics_endpoint() -> Response:
+            return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
+
         return
     Instrumentator().instrument(app).expose(app, endpoint="/metrics", include_in_schema=False)
 

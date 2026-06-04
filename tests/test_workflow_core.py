@@ -3,6 +3,7 @@ from __future__ import annotations
 import unittest
 
 from core.models import StepResult
+from core.workflow.condition import evaluate_condition
 from core.workflow import DAGRunner, NodeRegistry, NodeSpec, WorkflowSpec, pipeline_to_workflow
 from modules.base import BaseModule
 
@@ -51,3 +52,10 @@ class WorkflowCoreTests(unittest.TestCase):
 
         self.assertEqual(calls, ["a"])
         self.assertEqual(results["a"].status, "done")
+
+    def test_workflow_condition_accepts_simple_comparison(self) -> None:
+        self.assertTrue(evaluate_condition("payload['kind'] == 'cut'", {"payload": {"kind": "cut"}}))
+
+    def test_workflow_condition_rejects_python_expression_fallback(self) -> None:
+        with self.assertRaisesRegex(ValueError, "unsupported workflow condition"):
+            evaluate_condition("__import__('os').system('echo unsafe')", {"payload": {}})

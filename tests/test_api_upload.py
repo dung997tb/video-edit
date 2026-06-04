@@ -104,7 +104,7 @@ class ApiUploadTests(unittest.TestCase):
 
         response = client.post(
             "/jobs/upload",
-            data={"pipeline_type": "low_level", "payload_json": "{}"},
+            data={"pipeline_type": "low_level", "payload_json": '{"operations":[{"type":"cut"}]}'},
             files={"file": ("clip.mp4", content, "video/mp4")},
         )
 
@@ -121,7 +121,7 @@ class ApiUploadTests(unittest.TestCase):
 
         response = client.post(
             "/jobs/upload",
-            data={"pipeline_type": "low_level", "payload_json": "{}"},
+            data={"pipeline_type": "low_level", "payload_json": '{"operations":[{"type":"cut"}]}'},
             files={"file": ("clip.mp4", content, "video/mp4")},
         )
 

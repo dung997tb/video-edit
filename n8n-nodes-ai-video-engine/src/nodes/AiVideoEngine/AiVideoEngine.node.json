@@ -1,0 +1,37 @@
+{
+	"node": "n8n-nodes-ai-video-engine.aiVideoEngine",
+	"nodeVersion": "1.0",
+	"codexVersion": "1.0",
+	"categories": ["Transform"],
+	"subcategories": {
+		"Transform": ["Video Processing"]
+	},
+	"resources": {
+		"primaryDocumentation": [
+			{
+				"url": "https://github.com/dung997tb/video-edit/tree/main/n8n-nodes-ai-video-engine"
+			}
+		]
+	},
+	"alias": [
+		"mewocamm",
+		"mewocamm video editor",
+		"video",
+		"video editor",
+		"ai video",
+		"ai video engine",
+		"dubbing",
+		"lồng tiếng",
+		"subtitle",
+		"phụ đề",
+		"caption",
+		"cắt video",
+		"ffmpeg",
+		"video edit",
+		"reframe",
+		"transcode",
+		"silence cut",
+		"audio extract",
+		"video engine"
+	]
+}
